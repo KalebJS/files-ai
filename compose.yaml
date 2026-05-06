@@ -1,0 +1,15 @@
+services:
+  files-ai:
+    build: .
+    container_name: files-ai
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ${HOST_DATA:-./data}:/data
+    environment:
+      BACKEND: ${BACKEND:-local}
+      BACKEND_OPTS__ROOT: ${BACKEND_OPTS__ROOT:-/data}
+      DROPZONE: ${DROPZONE:-/dropzone}
+      ORGANIZED: ${ORGANIZED:-/organized}
+      QUARANTINE: ${QUARANTINE:-/quarantine}
+      STATE_DB: ${STATE_DB:-/data/state.db}
