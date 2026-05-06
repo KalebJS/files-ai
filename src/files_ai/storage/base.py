@@ -1,3 +1,5 @@
+"""Storage protocol definitions shared by all backends."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,6 +13,8 @@ from typing import Protocol
 
 @dataclass(frozen=True, slots=True)
 class FileRef:
+    """Portable backend file reference."""
+
     backend: str
     path: str
     id: str | None = None
@@ -19,6 +23,8 @@ class FileRef:
 
 @dataclass(frozen=True, slots=True)
 class FileMeta:
+    """Metadata for a file or directory."""
+
     ref: FileRef
     size: int
     mtime: datetime
@@ -29,45 +35,76 @@ class FileMeta:
 
 @dataclass(frozen=True, slots=True)
 class FileEvent:
+    """Filesystem event emitted by a backend watcher."""
+
     kind: str
     ref: FileRef
     src_ref: FileRef | None = None
 
 
 class StorageError(Exception):
-    pass
+    """Base storage exception."""
 
 
 class NotFound(StorageError):
-    pass
+    """Raised when a referenced path does not exist."""
 
 
 class Conflict(StorageError):
-    pass
+    """Raised when an operation conflicts with backend constraints."""
 
 
 class Files(Protocol):
+    """Interface for storage backends."""
+
     name: str
 
-    def exists(self, ref: FileRef) -> bool: ...
-    def stat(self, ref: FileRef) -> FileMeta: ...
-    def walk(self, root: FileRef) -> Iterator[FileMeta]: ...
-    def walk_dirs(self, root: FileRef, max_depth: int = 4) -> Iterator[FileRef]: ...
-    def open(self, ref: FileRef) -> BinaryIO: ...
-    def read_bytes(self, ref: FileRef, *, limit: int | None = None) -> bytes: ...
-    def hash(self, ref: FileRef, algo: str = "sha256") -> str: ...
+    def exists(self, ref: FileRef) -> bool:
+        """Return whether a reference exists."""
+
+    def stat(self, ref: FileRef) -> FileMeta:
+        """Return metadata for a reference."""
+
+    def walk(self, root: FileRef) -> Iterator[FileMeta]:
+        """Yield files under root recursively."""
+
+    def walk_dirs(self, root: FileRef, max_depth: int = 4) -> Iterator[FileRef]:
+        """Yield directories under root recursively."""
+
+    def open(self, ref: FileRef) -> BinaryIO:
+        """Open a file reference for binary reads."""
+
+    def read_bytes(self, ref: FileRef, *, limit: int | None = None) -> bytes:
+        """Read bytes from a reference."""
+
+    def hash(self, ref: FileRef, algo: str = "sha256") -> str:
+        """Compute a hash for a file reference."""
+
     def make_dir(
         self, ref: FileRef, *, parents: bool = True, exist_ok: bool = True
-    ) -> FileRef: ...
-    def move(
-        self, src: FileRef, dst: FileRef, *, overwrite: bool = False
-    ) -> FileRef: ...
-    def copy(
-        self, src: FileRef, dst: FileRef, *, overwrite: bool = False
-    ) -> FileRef: ...
-    def delete(self, ref: FileRef) -> None: ...
-    def join(self, root: FileRef, *parts: str) -> FileRef: ...
-    def parent(self, ref: FileRef) -> FileRef: ...
-    def name_of(self, ref: FileRef) -> str: ...
-    def watch(self, root: FileRef) -> Iterator[FileEvent]: ...
-    def stop_watch(self) -> None: ...
+    ) -> FileRef:
+        """Create a directory reference."""
+
+    def move(self, src: FileRef, dst: FileRef, *, overwrite: bool = False) -> FileRef:
+        """Move a reference to a destination."""
+
+    def copy(self, src: FileRef, dst: FileRef, *, overwrite: bool = False) -> FileRef:
+        """Copy a reference to a destination."""
+
+    def delete(self, ref: FileRef) -> None:
+        """Delete a file or directory reference."""
+
+    def join(self, root: FileRef, *parts: str) -> FileRef:
+        """Join path parts under a root reference."""
+
+    def parent(self, ref: FileRef) -> FileRef:
+        """Return parent reference for a path."""
+
+    def name_of(self, ref: FileRef) -> str:
+        """Return basename for a reference."""
+
+    def watch(self, root: FileRef) -> Iterator[FileEvent]:
+        """Yield filesystem events for a watched root."""
+
+    def stop_watch(self) -> None:
+        """Stop active watch stream."""

@@ -1,3 +1,5 @@
+"""File move helpers with dedupe and conflict resolution."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,6 +12,8 @@ from .store import Store
 
 @dataclass(frozen=True)
 class MoveResult:
+    """Result details for a move operation."""
+
     file_id: int | None
     destination: FileRef | None
     dry_run: bool
@@ -26,6 +30,7 @@ def move_into_folder(
     extracted_chars: int,
     dry_run: bool = False,
 ) -> MoveResult:
+    """Move one file into target folder and persist metadata."""
     filename = files.name_of(src)
     sha256 = files.hash(src)
     if store.has_hash(sha256):
@@ -53,6 +58,7 @@ def move_into_folder(
 
 
 def _next_available_destination(*, files: Files, folder: FileRef, name: str) -> FileRef:
+    """Return the next non-conflicting destination path."""
     candidate = files.join(folder, name)
     if not files.exists(candidate):
         return candidate
@@ -66,6 +72,7 @@ def _next_available_destination(*, files: Files, folder: FileRef, name: str) -> 
 
 
 def _split_name(name: str) -> tuple[str, str]:
+    """Split filename into stem and full suffix."""
     pure = PurePosixPath(name)
     suffix = "".join(pure.suffixes)
     if not suffix:

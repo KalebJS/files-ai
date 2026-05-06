@@ -1,3 +1,5 @@
+"""Local filesystem implementation of the Files protocol."""
+
 from __future__ import annotations
 
 import hashlib
@@ -25,20 +27,27 @@ from .base import NotFound
 
 
 class _QueueHandler(FileSystemEventHandler):
+    """Watchdog event adapter that pushes normalized FileEvent objects."""
+
     def __init__(self, owner: "LocalFiles", out_queue: queue.Queue[FileEvent]) -> None:
+        """Store backend and output queue references."""
         self.owner = owner
         self.out_queue = out_queue
 
     def on_created(self, event: FileSystemEvent) -> None:
+        """Handle create events."""
         self._push("created", event.src_path)
 
     def on_modified(self, event: FileSystemEvent) -> None:
+        """Handle modify events."""
         self._push("modified", event.src_path)
 
     def on_deleted(self, event: FileSystemEvent) -> None:
+        """Handle delete events."""
         self._push("deleted", event.src_path)
 
     def on_moved(self, event: FileSystemMovedEvent) -> None:
+        """Handle move events."""
         dst_ref = self.owner._from_abs_path(Path(event.dest_path))
         src_ref = self.owner._from_abs_path(Path(event.src_path))
         if dst_ref is None:
@@ -46,6 +55,7 @@ class _QueueHandler(FileSystemEventHandler):
         self.out_queue.put(FileEvent(kind="moved", ref=dst_ref, src_ref=src_ref))
 
     def _push(self, kind: str, src_path: str) -> None:
+        """Convert a raw path to FileRef and queue the event."""
         ref = self.owner._from_abs_path(Path(src_path))
         if ref is None:
             return
@@ -53,9 +63,12 @@ class _QueueHandler(FileSystemEventHandler):
 
 
 class LocalFiles:
+    """Files backend for one rooted local directory tree."""
+
     name = "local"
 
     def __init__(self, root: str | Path, poll_interval_seconds: float = 1.0) -> None:
+        """Initialize backend root and watcher state."""
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.poll_interval_seconds = poll_interval_seconds
@@ -65,9 +78,11 @@ class LocalFiles:
         self._stop_event = threading.Event()
 
     def exists(self, ref: FileRef) -> bool:
+        """Return whether a path exists."""
         return self._to_abs_path(ref).exists()
 
     def stat(self, ref: FileRef) -> FileMeta:
+        """Return metadata for a path."""
         target = self._to_abs_path(ref)
         if not target.exists():
             raise NotFound(ref.path)
@@ -80,6 +95,7 @@ class LocalFiles:
         )
 
     def walk(self, root: FileRef) -> Iterator[FileMeta]:
+        """Recursively yield file metadata under root."""
         root_abs = self._to_abs_path(root)
         if not root_abs.exists():
             return
@@ -92,6 +108,7 @@ class LocalFiles:
                 yield self.stat(ref)
 
     def walk_dirs(self, root: FileRef, max_depth: int = 4) -> Iterator[FileRef]:
+        """Recursively yield directory refs under root."""
         root_abs = self._to_abs_path(root)
         if not root_abs.exists():
             return
@@ -108,13 +125,16 @@ class LocalFiles:
                     yield ref
 
     def open(self, ref: FileRef) -> BinaryIO:
+        """Open a file for binary reading."""
         return self._to_abs_path(ref).open("rb")
 
     def read_bytes(self, ref: FileRef, *, limit: int | None = None) -> bytes:
+        """Read bytes from a file, optionally capped."""
         with self.open(ref) as file_obj:
             return file_obj.read() if limit is None else file_obj.read(limit)
 
     def hash(self, ref: FileRef, algo: str = "sha256") -> str:
+        """Compute content hash for a file."""
         hasher = hashlib.new(algo)
         with self.open(ref) as file_obj:
             while chunk := file_obj.read(1024 * 1024):
@@ -124,10 +144,12 @@ class LocalFiles:
     def make_dir(
         self, ref: FileRef, *, parents: bool = True, exist_ok: bool = True
     ) -> FileRef:
+        """Create a directory and return its ref."""
         self._to_abs_path(ref).mkdir(parents=parents, exist_ok=exist_ok)
         return ref
 
     def move(self, src: FileRef, dst: FileRef, *, overwrite: bool = False) -> FileRef:
+        """Move a file, using copy+unlink fallback when needed."""
         self._validate_refs(src, dst)
         src_abs = self._to_abs_path(src)
         dst_abs = self._to_abs_path(dst)
@@ -145,6 +167,7 @@ class LocalFiles:
         return dst
 
     def copy(self, src: FileRef, dst: FileRef, *, overwrite: bool = False) -> FileRef:
+        """Copy a file."""
         self._validate_refs(src, dst)
         src_abs = self._to_abs_path(src)
         dst_abs = self._to_abs_path(dst)
@@ -155,6 +178,7 @@ class LocalFiles:
         return dst
 
     def delete(self, ref: FileRef) -> None:
+        """Delete a file or directory tree."""
         target = self._to_abs_path(ref)
         if not target.exists():
             return
@@ -164,19 +188,23 @@ class LocalFiles:
             target.unlink()
 
     def join(self, root: FileRef, *parts: str) -> FileRef:
+        """Join path parts under a root reference."""
         pure = PurePosixPath(root.path)
         for part in parts:
             pure = pure / part
         return FileRef(backend=self.name, path="/" + str(pure).lstrip("/"))
 
     def parent(self, ref: FileRef) -> FileRef:
+        """Return the parent reference."""
         pure = PurePosixPath(ref.path)
         return FileRef(backend=self.name, path="/" + str(pure.parent).lstrip("/"))
 
     def name_of(self, ref: FileRef) -> str:
+        """Return the basename for a file reference."""
         return PurePosixPath(ref.path).name
 
     def watch(self, root: FileRef) -> Iterator[FileEvent]:
+        """Yield filesystem events for a watched root."""
         root_abs = self._to_abs_path(root)
         with self._watch_lock:
             if self._observer is None:
@@ -194,6 +222,7 @@ class LocalFiles:
             yield event
 
     def stop_watch(self) -> None:
+        """Stop an active watcher."""
         with self._watch_lock:
             self._stop_event.set()
             if self._observer is not None:
@@ -202,10 +231,12 @@ class LocalFiles:
                 self._observer = None
 
     def _validate_refs(self, src: FileRef, dst: FileRef) -> None:
+        """Validate that refs target this backend."""
         if src.backend != self.name or dst.backend != self.name:
             raise Conflict("backend mismatch")
 
     def _to_abs_path(self, ref: FileRef) -> Path:
+        """Resolve a FileRef into an absolute path under backend root."""
         if ref.backend != self.name:
             raise Conflict(f"unsupported backend {ref.backend}")
         rel = ref.path.lstrip("/")
@@ -215,6 +246,7 @@ class LocalFiles:
         return target
 
     def _from_abs_path(self, path: Path) -> FileRef | None:
+        """Convert absolute path to FileRef if inside backend root."""
         try:
             rel = path.resolve().relative_to(self.root)
         except ValueError:

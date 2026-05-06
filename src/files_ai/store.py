@@ -1,3 +1,5 @@
+"""SQLite persistence layer for files and routing decisions."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -36,6 +38,8 @@ CREATE TABLE IF NOT EXISTS folder_index (
 
 @dataclass(frozen=True)
 class FileRow:
+    """Materialized file row shape."""
+
     id: int
     sha256: str
     backend: str
@@ -48,7 +52,10 @@ class FileRow:
 
 
 class Store:
+    """Repository-backed store for metadata and decision history."""
+
     def __init__(self, db_path: str | Path) -> None:
+        """Initialize database connection and schema."""
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.db_path)
@@ -57,9 +64,11 @@ class Store:
         self.conn.commit()
 
     def close(self) -> None:
+        """Close database connection."""
         self.conn.close()
 
     def has_hash(self, sha256: str) -> bool:
+        """Return whether a file hash already exists."""
         row = self.conn.execute(
             "SELECT 1 FROM files WHERE sha256 = ? LIMIT 1", (sha256,)
         ).fetchone()
@@ -75,6 +84,7 @@ class Store:
         mime: str | None,
         extracted_chars: int,
     ) -> int:
+        """Insert a file record and return its row id."""
         cur = self.conn.execute(
             """
             INSERT INTO files(sha256, backend, src_path, size, mime, extracted_chars)
@@ -86,6 +96,7 @@ class Store:
         return int(cur.lastrowid)
 
     def set_destination(self, file_id: int, dst_path: str) -> None:
+        """Set final destination path and move timestamp for a file."""
         moved_at = datetime.now(timezone.utc).isoformat()
         self.conn.execute(
             "UPDATE files SET dst_path = ?, moved_at = ? WHERE id = ?",
@@ -96,6 +107,7 @@ class Store:
     def add_decision(
         self, file_id: int, *, reasoning: str, tools_called: str, model: str
     ) -> None:
+        """Persist model decision details for one file."""
         self.conn.execute(
             """
             INSERT INTO decisions(file_id, reasoning, tools_called, model, created_at)
@@ -112,6 +124,7 @@ class Store:
         self.conn.commit()
 
     def upsert_folder(self, canonical: str, path: str) -> None:
+        """Upsert folder mapping and increment usage count."""
         self.conn.execute(
             """
             INSERT INTO folder_index(canonical, path, use_count)
@@ -125,6 +138,7 @@ class Store:
         self.conn.commit()
 
     def get_folder(self, canonical: str) -> str | None:
+        """Fetch stored folder path for a canonical label."""
         row = self.conn.execute(
             "SELECT path FROM folder_index WHERE canonical = ?", (canonical,)
         ).fetchone()

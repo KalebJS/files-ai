@@ -1,3 +1,5 @@
+"""Helper tools used by file-organization orchestration."""
+
 from __future__ import annotations
 
 import re
@@ -12,6 +14,8 @@ from .store import Store
 
 @dataclass
 class ToolContext:
+    """Shared dependencies used by organizer tools."""
+
     files: Files
     store: Store
     organized_root: FileRef
@@ -20,10 +24,14 @@ class ToolContext:
 
 
 class OrganizerTools:
+    """Domain operations for folder proposal and file moves."""
+
     def __init__(self, ctx: ToolContext) -> None:
+        """Store tool dependencies."""
         self.ctx = ctx
 
     def list_tree(self, max_depth: int = 4) -> list[str]:
+        """List organized-folder tree paths."""
         return sorted(
             ref.path
             for ref in self.ctx.files.walk_dirs(
@@ -32,6 +40,7 @@ class OrganizerTools:
         )
 
     def propose_folder(self, label: str) -> str:
+        """Resolve or create a folder from a semantic label."""
         canonical = _canonical(label)
         cached = self.ctx.store.get_folder(canonical)
         if cached:
@@ -43,6 +52,7 @@ class OrganizerTools:
     def move_file(
         self, src: FileRef, folder: str, *, mime: str | None, extracted_chars: int
     ) -> MoveResult:
+        """Move a file into a target organized folder."""
         dst_folder = self.ctx.files.join(self.ctx.organized_root, folder)
         return move_into_folder(
             files=self.ctx.files,
@@ -57,6 +67,7 @@ class OrganizerTools:
     def quarantine_file(
         self, src: FileRef, *, mime: str | None, extracted_chars: int
     ) -> MoveResult:
+        """Move a file into quarantine."""
         return move_into_folder(
             files=self.ctx.files,
             store=self.ctx.store,
@@ -69,10 +80,12 @@ class OrganizerTools:
 
 
 def _canonical(value: str) -> str:
+    """Normalize text into a canonical key."""
     return re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
 
 
 def _folderize(value: str) -> str:
+    """Normalize free text into a folder path."""
     cleaned = re.sub(r"[^a-zA-Z0-9/_ -]", "", value).strip()
     if not cleaned:
         return "Unsorted"

@@ -40,10 +40,13 @@ line-length = 88
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+select = ["D", "E", "F", "I"]
 
 [tool.ruff.lint.isort]
 force-single-line = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.bandit]
 exclude_dirs = ["tests"]

@@ -1,3 +1,5 @@
+"""Logging helpers for structured application logs."""
+
 from __future__ import annotations
 
 import logging
@@ -6,6 +8,7 @@ import structlog
 
 
 def configure_logging(level: str = "INFO") -> None:
+    """Configure stdlib logging and structlog processors."""
     logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO))
     structlog.configure(
         processors=[

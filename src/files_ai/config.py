@@ -1,3 +1,5 @@
+"""Application configuration sourced from environment variables."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -10,6 +12,8 @@ from pydantic_settings import SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Runtime settings for backend, model, and processing behavior."""
+
     backend: str = "local"
     backend_opts: dict[str, Any] = {"root": "/data"}
 
@@ -34,4 +38,5 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    """Return cached settings instance."""
     return Settings()

@@ -1,3 +1,5 @@
+"""Local storage backend tests."""
+
 from __future__ import annotations
 
 import threading
@@ -9,6 +11,7 @@ from files_ai.storage import LocalFiles
 
 
 def test_walk_move_and_hash(tmp_path: Path) -> None:
+    """Walk files, compute hash, and move file within backend."""
     files = LocalFiles(tmp_path)
     drop = FileRef("local", "/dropzone")
     org = FileRef("local", "/organized")
@@ -31,6 +34,7 @@ def test_walk_move_and_hash(tmp_path: Path) -> None:
 
 
 def test_watch_created_event(tmp_path: Path) -> None:
+    """Emit created event when new file appears in watched directory."""
     files = LocalFiles(tmp_path, poll_interval_seconds=0.1)
     drop = FileRef("local", "/dropzone")
     files.make_dir(drop)
@@ -39,6 +43,7 @@ def test_watch_created_event(tmp_path: Path) -> None:
         target = tmp_path / "dropzone" / "new.txt"
 
         def _create_file() -> None:
+            """Create a test file after a short delay."""
             time.sleep(0.3)
             target.write_text("x", encoding="utf-8")
 

@@ -1,3 +1,5 @@
+"""Tiered file-content extraction helpers."""
+
 from __future__ import annotations
 
 import io
@@ -13,6 +15,8 @@ GENERIC_NAME = re.compile(r"^(img|scan|document|file)[-_ ]?\d*$", re.IGNORECASE)
 
 @dataclass(frozen=True)
 class ExtractionResult:
+    """Normalized extraction output for one file."""
+
     text: str
     mime: str | None
     tier: int
@@ -21,6 +25,7 @@ class ExtractionResult:
 def extract_file(
     files: Files, ref: FileRef, *, max_bytes: int = 8192, ocr_enabled: bool = False
 ) -> ExtractionResult:
+    """Extract useful text from a file using tiered strategies."""
     name = files.name_of(ref)
     first_bytes = files.read_bytes(ref, limit=min(max_bytes, 4096))
     mime = _detect_mime(name, first_bytes)
@@ -42,6 +47,7 @@ def extract_file(
 
 
 def _detect_mime(filename: str, content: bytes) -> str | None:
+    """Detect MIME type from bytes with filename fallback."""
     try:
         import magic  # type: ignore
 
@@ -55,6 +61,7 @@ def _detect_mime(filename: str, content: bytes) -> str | None:
 
 
 def _needs_tier_two(name: str, mime: str | None) -> bool:
+    """Return whether richer text extraction is needed."""
     stem = name.rsplit(".", 1)[0]
     if GENERIC_NAME.match(stem):
         return True
@@ -69,6 +76,7 @@ def _needs_tier_two(name: str, mime: str | None) -> bool:
 def _extract_text(
     files: Files, ref: FileRef, mime: str | None, *, max_bytes: int
 ) -> str:
+    """Extract text from supported document formats."""
     lower = files.name_of(ref).lower()
     if lower.endswith(".pdf") or mime == "application/pdf":
         try:
@@ -99,6 +107,7 @@ def _extract_text(
 
 
 def _extract_ocr(files: Files, ref: FileRef, mime: str | None) -> str:
+    """Extract text from image content via OCR when possible."""
     if not (mime and mime.startswith("image/")):
         return ""
     try:

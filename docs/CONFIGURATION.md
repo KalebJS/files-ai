@@ -1,0 +1,66 @@
+# Configuration Reference
+
+This document describes runtime configuration for `files-ai`.
+
+## Backend and paths
+
+- `BACKEND`  
+  Storage backend name. Phase 1 supports `local`.
+
+- `BACKEND_OPTS__ROOT`  
+  Root directory for backend path resolution (default `/data` in container).
+
+- `DROPZONE`  
+  Dropzone path within backend (default `/dropzone`).
+
+- `ORGANIZED`  
+  Organized output path within backend (default `/organized`).
+
+- `QUARANTINE`  
+  Quarantine path within backend (default `/quarantine`).
+
+- `STATE_DB`  
+  SQLite database file path (default `/data/state.db`).
+
+## Model settings
+
+- `OLLAMA_API_KEY`  
+  API key for Ollama Cloud.
+
+- `OLLAMA_BASE_URL`  
+  Ollama endpoint, default `https://ollama.com`.
+
+- `MODEL`  
+  Chat model name, default `gpt-oss:120b-cloud`.
+
+## Processing behavior
+
+- `DRY_RUN` (`true`/`false`)  
+  If true, decisions are logged without moving files.
+
+- `MAX_DEPTH`  
+  Maximum folder depth generated/used by routing logic.
+
+- `EXTRACT_MAX_BYTES`  
+  Byte limit for bounded text extraction reads.
+
+- `OCR_ENABLED` (`true`/`false`)  
+  Enables OCR fallback for image-like files.
+
+- `LOG_LEVEL`  
+  Logging verbosity (e.g. `INFO`, `DEBUG`).
+
+## Docker notes
+
+With Compose, set `HOST_DATA` to map host files into container `/data`:
+
+```bash
+HOST_DATA=/absolute/path/to/data
+```
+
+The mounted root should contain (or allow creation of):
+
+- `dropzone/`
+- `organized/`
+- `quarantine/`
+- `state.db`

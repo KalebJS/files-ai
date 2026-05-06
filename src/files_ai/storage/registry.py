@@ -1,3 +1,5 @@
+"""Backend registry and constructor helpers."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -7,6 +9,7 @@ from .local import LocalFiles
 
 
 def get_files(name: str, **opts: Any) -> Files:
+    """Build a Files backend from configured name and options."""
     backend = name.lower().strip()
     if backend == "local":
         return LocalFiles(**opts)

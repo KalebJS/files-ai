@@ -1,3 +1,5 @@
+"""Protocol conformance smoke tests for LocalFiles."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,6 +9,7 @@ from files_ai.storage import LocalFiles
 
 
 def test_protocol_conformance_surface(tmp_path: Path) -> None:
+    """Validate core Files protocol operations for local backend."""
     files = LocalFiles(tmp_path)
     root = FileRef("local", "/dropzone")
     files.make_dir(root)

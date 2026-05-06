@@ -1,3 +1,5 @@
+"""Service entrypoint for continuous file organization."""
+
 from __future__ import annotations
 
 import argparse
@@ -23,6 +25,7 @@ from .watcher import StableFileWatcher
 
 
 def main() -> None:
+    """Run organizer process in once or watch mode."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
@@ -83,6 +86,7 @@ def main() -> None:
 def _process_file(
     ref: FileRef, *, settings: Settings, tools: OrganizerTools, agent: object
 ) -> None:
+    """Process one file end-to-end and persist decision metadata."""
     log = structlog.get_logger("files_ai.processor").bind(path=ref.path)
     extraction = extract_file(
         tools.ctx.files,
@@ -131,6 +135,7 @@ def _apply_decision(
     mime: str | None,
     extracted_chars: int,
 ):
+    """Apply routing decision by moving file or quarantining it."""
     if decision.quarantine:
         return tools.quarantine_file(ref, mime=mime, extracted_chars=extracted_chars)
     folder = tools.propose_folder(decision.folder)

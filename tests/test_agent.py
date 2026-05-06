@@ -1,17 +1,24 @@
+"""Agent decision tests."""
+
 from __future__ import annotations
 
 from files_ai.agent import decide_folder
 
 
 class DummyAgent:
+    """Minimal fake agent used for deterministic tests."""
+
     def __init__(self, payload: str) -> None:
+        """Store response payload."""
         self.payload = payload
 
     def invoke(self, _: object) -> dict[str, object]:
+        """Return static payload in agent-like shape."""
         return {"output": self.payload}
 
 
 def test_decide_folder_parses_json_output() -> None:
+    """Parse valid JSON output into a typed decision."""
     agent = DummyAgent(
         (
             '{"folder":"Finance/Invoices","reasoning":"invoice keywords",'
@@ -30,6 +37,7 @@ def test_decide_folder_parses_json_output() -> None:
 
 
 def test_decide_folder_falls_back_to_heuristic() -> None:
+    """Use heuristic fallback when model output is not parseable JSON."""
     agent = DummyAgent("not json")
     decision = decide_folder(
         agent,

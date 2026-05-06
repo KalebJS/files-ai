@@ -1,3 +1,5 @@
+"""Extraction pipeline tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,6 +10,7 @@ from files_ai.storage import LocalFiles
 
 
 def test_extract_text_file(tmp_path: Path) -> None:
+    """Extract text content from a plain text file."""
     files = LocalFiles(tmp_path)
     drop = FileRef("local", "/dropzone")
     files.make_dir(drop)
@@ -22,6 +25,7 @@ def test_extract_text_file(tmp_path: Path) -> None:
 
 
 def test_extract_generic_name_fallbacks_to_filename(tmp_path: Path) -> None:
+    """Fallback to filename when no extractable content exists."""
     files = LocalFiles(tmp_path)
     drop = FileRef("local", "/dropzone")
     files.make_dir(drop)
