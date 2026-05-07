@@ -140,6 +140,9 @@ def _apply_decision(
         return tools.quarantine_file(ref, mime=mime, extracted_chars=extracted_chars)
     folder = tools.propose_folder(decision.folder)
     parts = [part for part in PurePosixPath(folder).parts if part not in {"", "/"}]
+    root_name = PurePosixPath(tools.ctx.organized_root.path).name
+    if parts and parts[0] == root_name:
+        parts = parts[1:]
     normalized = "/".join(parts[:4]) or "Unsorted"
     return tools.move_file(ref, normalized, mime=mime, extracted_chars=extracted_chars)
 
