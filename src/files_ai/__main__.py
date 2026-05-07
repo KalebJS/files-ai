@@ -16,6 +16,7 @@ from .config import get_settings
 from .extract import extract_file
 from .logging import configure_logging
 from .storage import FileRef
+from .storage import NotFound
 from .storage import get_files
 from .store import Store
 from .tools import OrganizerTools
@@ -70,12 +71,14 @@ def main() -> None:
 
     try:
         for ref in watcher.startup_scan(dropzone):
+            ref = _with_dropzone_metadata(ref, dropzone)
             _process_file(ref, settings=settings, tools=tools, agent=agent)
         if args.once:
             return
         for ref in watcher.iter_stable_events(dropzone):
             if stopped:
                 break
+            ref = _with_dropzone_metadata(ref, dropzone)
             _process_file(ref, settings=settings, tools=tools, agent=agent)
     finally:
         watcher.stop()
@@ -87,7 +90,17 @@ def _process_file(
     ref: FileRef, *, settings: Settings, tools: OrganizerTools, agent: object
 ) -> None:
     """Process one file end-to-end and persist decision metadata."""
-    log = structlog.get_logger("files_ai.processor").bind(path=ref.path)
+    log = structlog.get_logger("files_ai.processor").bind(
+        path=ref.path,
+        source_rel_dir=ref.extra.get("dropzone_relative_dir", ""),
+    )
+    try:
+        if tools.ctx.files.stat(ref).is_dir:
+            log.info("skipped_directory")
+            return
+    except NotFound:
+        log.info("skipped_missing")
+        return
     extraction = extract_file(
         tools.ctx.files,
         ref,
@@ -125,6 +138,20 @@ def _process_file(
         tier=extraction.tier,
         confidence=decision.confidence,
     )
+
+
+def _with_dropzone_metadata(ref: FileRef, dropzone: FileRef) -> FileRef:
+    """Attach dropzone-relative folder metadata to a file reference."""
+    rel_dir = ""
+    try:
+        rel_path = PurePosixPath(ref.path).relative_to(PurePosixPath(dropzone.path))
+        if str(rel_path.parent) != ".":
+            rel_dir = rel_path.parent.as_posix()
+    except ValueError:
+        rel_dir = ""
+    extra = dict(ref.extra)
+    extra["dropzone_relative_dir"] = rel_dir
+    return FileRef(backend=ref.backend, path=ref.path, id=ref.id, extra=extra)
 
 
 def _apply_decision(

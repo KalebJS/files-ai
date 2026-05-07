@@ -46,11 +46,17 @@ class StableFileWatcher:
         """Return whether a file size remains stable across a short interval."""
         if not self.files.exists(ref):
             return False
-        first = self.files.stat(ref).size
+        first_meta = self.files.stat(ref)
+        if first_meta.is_dir:
+            return False
+        first = first_meta.size
         time.sleep(self.stabilize_seconds)
         if not self.files.exists(ref):
             return False
-        second = self.files.stat(ref).size
+        second_meta = self.files.stat(ref)
+        if second_meta.is_dir:
+            return False
+        second = second_meta.size
         return first == second
 
     def _should_skip(self, ref: FileRef) -> bool:

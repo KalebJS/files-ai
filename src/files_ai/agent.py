@@ -14,8 +14,8 @@ from .config import Settings
 
 SYSTEM_PROMPT = """You are an AI file organizer.
 Return JSON only with keys:
-- folder: target folder under organized root
 - reasoning: short rationale
+- folder: target folder under organized root
 - confidence: number in [0,1]
 - quarantine: boolean
 Keep folder depth <= 4.
