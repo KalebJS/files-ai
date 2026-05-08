@@ -12,7 +12,14 @@ from .store import Store
 
 @dataclass(frozen=True)
 class MoveResult:
-    """Result details for a move operation."""
+    """Result details for a move operation.
+
+    Attributes:
+        file_id: Inserted store row id, if created.
+        destination: Destination reference, if assigned.
+        dry_run: Whether the operation ran in dry-run mode.
+        duplicate: Whether source content was detected as duplicate.
+    """
 
     file_id: int | None
     destination: FileRef | None
@@ -30,7 +37,20 @@ def move_into_folder(
     extracted_chars: int,
     dry_run: bool = False,
 ) -> MoveResult:
-    """Move one file into target folder and persist metadata."""
+    """Move one file into target folder and persist metadata.
+
+    Args:
+        files: Storage backend.
+        store: Persistent metadata store.
+        src: Source file reference.
+        folder: Destination folder reference.
+        mime: MIME type when known.
+        extracted_chars: Number of extracted text characters.
+        dry_run: Whether to avoid filesystem writes.
+
+    Returns:
+        MoveResult: Operation result metadata.
+    """
     filename = files.name_of(src)
     sha256 = files.hash(src)
     if store.has_hash(sha256):
@@ -58,7 +78,16 @@ def move_into_folder(
 
 
 def _next_available_destination(*, files: Files, folder: FileRef, name: str) -> FileRef:
-    """Return the next non-conflicting destination path."""
+    """Return the next non-conflicting destination path.
+
+    Args:
+        files: Storage backend.
+        folder: Destination folder reference.
+        name: Preferred filename.
+
+    Returns:
+        FileRef: First non-conflicting destination reference.
+    """
     candidate = files.join(folder, name)
     if not files.exists(candidate):
         return candidate
@@ -72,7 +101,14 @@ def _next_available_destination(*, files: Files, folder: FileRef, name: str) -> 
 
 
 def _split_name(name: str) -> tuple[str, str]:
-    """Split filename into stem and full suffix."""
+    """Split filename into stem and full suffix.
+
+    Args:
+        name: Filename to split.
+
+    Returns:
+        tuple[str, str]: Stem and full suffix components.
+    """
     pure = PurePosixPath(name)
     suffix = "".join(pure.suffixes)
     if not suffix:

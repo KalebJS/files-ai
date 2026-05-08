@@ -15,7 +15,13 @@ GENERIC_NAME = re.compile(r"^(img|scan|document|file)[-_ ]?\d*$", re.IGNORECASE)
 
 @dataclass(frozen=True)
 class ExtractionResult:
-    """Normalized extraction output for one file."""
+    """Normalized extraction output for one file.
+
+    Attributes:
+        text: Extracted text or fallback filename.
+        mime: Detected MIME type when available.
+        tier: Extraction tier used to produce `text`.
+    """
 
     text: str
     mime: str | None
@@ -25,7 +31,17 @@ class ExtractionResult:
 def extract_file(
     files: Files, ref: FileRef, *, max_bytes: int = 8192, ocr_enabled: bool = False
 ) -> ExtractionResult:
-    """Extract useful text from a file using tiered strategies."""
+    """Extract useful text from a file using tiered strategies.
+
+    Args:
+        files: Storage backend used for file reads.
+        ref: File to extract text from.
+        max_bytes: Maximum bytes to read for text-like content.
+        ocr_enabled: Whether to run OCR for image files when needed.
+
+    Returns:
+        ExtractionResult: Normalized extraction result.
+    """
     name = files.name_of(ref)
     first_bytes = files.read_bytes(ref, limit=min(max_bytes, 4096))
     mime = _detect_mime(name, first_bytes)
@@ -47,7 +63,15 @@ def extract_file(
 
 
 def _detect_mime(filename: str, content: bytes) -> str | None:
-    """Detect MIME type from bytes with filename fallback."""
+    """Detect MIME type from bytes with filename fallback.
+
+    Args:
+        filename: Source filename used for fallback guessing.
+        content: Initial bytes used for content-based detection.
+
+    Returns:
+        str | None: MIME type when detected, otherwise `None`.
+    """
     try:
         import magic  # type: ignore
 
@@ -61,7 +85,15 @@ def _detect_mime(filename: str, content: bytes) -> str | None:
 
 
 def _needs_tier_two(name: str, mime: str | None) -> bool:
-    """Return whether richer text extraction is needed."""
+    """Return whether richer text extraction is needed.
+
+    Args:
+        name: Source filename.
+        mime: Detected MIME type.
+
+    Returns:
+        bool: `True` when tier-two extraction should run.
+    """
     stem = name.rsplit(".", 1)[0]
     if GENERIC_NAME.match(stem):
         return True
@@ -76,7 +108,17 @@ def _needs_tier_two(name: str, mime: str | None) -> bool:
 def _extract_text(
     files: Files, ref: FileRef, mime: str | None, *, max_bytes: int
 ) -> str:
-    """Extract text from supported document formats."""
+    """Extract text from supported document formats.
+
+    Args:
+        files: Storage backend used for file reads.
+        ref: File reference to extract from.
+        mime: Detected MIME type.
+        max_bytes: Maximum bytes to read for text media.
+
+    Returns:
+        str: Extracted text, or an empty string when unsupported or failed.
+    """
     lower = files.name_of(ref).lower()
     if lower.endswith(".pdf") or mime == "application/pdf":
         try:
@@ -107,7 +149,16 @@ def _extract_text(
 
 
 def _extract_ocr(files: Files, ref: FileRef, mime: str | None) -> str:
-    """Extract text from image content via OCR when possible."""
+    """Extract text from image content via OCR when possible.
+
+    Args:
+        files: Storage backend used for file reads.
+        ref: File reference to extract from.
+        mime: Detected MIME type.
+
+    Returns:
+        str: OCR text, or an empty string if OCR is unavailable or fails.
+    """
     if not (mime and mime.startswith("image/")):
         return ""
     try:

@@ -15,7 +15,12 @@ class _DummyAgent:
 
 
 def test_once_mode_processes_dropzone_file(monkeypatch, tmp_path: Path) -> None:
-    """Process one dropzone file end-to-end in --once mode."""
+    """Process one dropzone file end-to-end in --once mode.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Temporary test directory.
+    """
     dropzone = tmp_path / "dropzone"
     organized = tmp_path / "organized"
     quarantine = tmp_path / "quarantine"

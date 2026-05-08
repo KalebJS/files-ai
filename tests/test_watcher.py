@@ -13,7 +13,11 @@ from files_ai.watcher import StableFileWatcher
 
 
 def test_iter_stable_events_ignores_directories(tmp_path: Path) -> None:
-    """Yield only files when directory events are received."""
+    """Yield only files when directory events are received.
+
+    Args:
+        tmp_path: Temporary test directory.
+    """
     files = LocalFiles(tmp_path)
     drop = FileRef("local", "/dropzone")
     files.make_dir(drop)

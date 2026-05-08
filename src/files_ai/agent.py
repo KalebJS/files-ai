@@ -24,7 +24,14 @@ Keep folder depth <= 4.
 
 @dataclass(frozen=True)
 class AgentDecision:
-    """Structured folder-routing decision."""
+    """Structured folder-routing decision.
+
+    Attributes:
+        folder: Target relative folder under organized root.
+        reasoning: Short rationale for the route.
+        confidence: Confidence score in `[0, 1]`.
+        quarantine: Whether the file should be quarantined.
+    """
 
     folder: str
     reasoning: str
@@ -33,7 +40,14 @@ class AgentDecision:
 
 
 def build_agent(settings: Settings) -> Any:
-    """Create a LangChain agent backed by ChatOllama."""
+    """Create a LangChain agent backed by ChatOllama.
+
+    Args:
+        settings: Runtime settings containing model and API config.
+
+    Returns:
+        Any: Agent object compatible with `.invoke(...)`.
+    """
     llm = ChatOllama(
         model=settings.model,
         base_url=settings.ollama_base_url,
@@ -50,7 +64,17 @@ def build_agent(settings: Settings) -> Any:
 def decide_folder(
     agent: Any, *, filename: str, extracted_text: str, tree_snapshot: list[str]
 ) -> AgentDecision:
-    """Ask the agent for a folder decision and normalize output."""
+    """Ask the agent for a folder decision and normalize output.
+
+    Args:
+        agent: Agent instance with an `invoke` method.
+        filename: Source filename.
+        extracted_text: Extracted file text used for routing.
+        tree_snapshot: Existing organized folder paths for context.
+
+    Returns:
+        AgentDecision: Normalized routing decision.
+    """
     prompt = (
         "Choose folder for file.\n"
         f"filename={filename}\n"
@@ -75,7 +99,14 @@ def decide_folder(
 
 
 def _extract_content(response: Any) -> str:
-    """Extract assistant text content from agent responses."""
+    """Extract assistant text content from agent responses.
+
+    Args:
+        response: Agent response payload in dict or message-like form.
+
+    Returns:
+        str: Best-effort text content from the response.
+    """
     if isinstance(response, dict):
         if "output" in response and isinstance(response["output"], str):
             return response["output"]
@@ -90,7 +121,14 @@ def _extract_content(response: Any) -> str:
 
 
 def _parse_json(content: str) -> dict[str, Any] | None:
-    """Parse JSON content, including fenced or mixed outputs."""
+    """Parse JSON content, including fenced or mixed outputs.
+
+    Args:
+        content: Raw model output.
+
+    Returns:
+        dict[str, Any] | None: Parsed JSON object when available.
+    """
     content = content.strip()
     if not content:
         return None
@@ -107,7 +145,15 @@ def _parse_json(content: str) -> dict[str, Any] | None:
 
 
 def _heuristic_decision(filename: str, extracted_text: str) -> AgentDecision:
-    """Return fallback folder decision from simple keyword matching."""
+    """Return fallback folder decision from simple keyword matching.
+
+    Args:
+        filename: Source filename.
+        extracted_text: Extracted file text.
+
+    Returns:
+        AgentDecision: Heuristic routing decision.
+    """
     corpus = f"{filename} {extracted_text}".lower()
     pairs = [
         ("invoice", "Finance/Invoices"),
@@ -130,7 +176,14 @@ def _heuristic_decision(filename: str, extracted_text: str) -> AgentDecision:
 
 
 def _sanitize_folder(folder: str) -> str:
-    """Normalize model folder output into safe path segments."""
+    """Normalize model folder output into safe path segments.
+
+    Args:
+        folder: Model-provided folder string.
+
+    Returns:
+        str: Sanitized folder path limited to four segments.
+    """
     parts: list[str] = []
     for raw in folder.split("/"):
         clean = re.sub(r"[^a-zA-Z0-9 _.-]", "", raw).strip().strip(".")

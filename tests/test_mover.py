@@ -11,7 +11,11 @@ from files_ai.store import Store
 
 
 def test_move_into_folder_and_dedupe(tmp_path: Path) -> None:
-    """Move first file and detect duplicate content on second file."""
+    """Move first file and detect duplicate content on second file.
+
+    Args:
+        tmp_path: Temporary test directory.
+    """
     files = LocalFiles(tmp_path)
     drop = FileRef("local", "/dropzone")
     org = FileRef("local", "/organized/Receipts")

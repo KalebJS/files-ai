@@ -16,12 +16,24 @@ class StableFileWatcher:
     """Yield stable file references from startup scans and watch events."""
 
     def __init__(self, files: Files, *, stabilize_seconds: float = 1.0) -> None:
-        """Initialize watcher with storage backend and stabilization delay."""
+        """Initialize watcher with storage backend and stabilization delay.
+
+        Args:
+            files: Storage backend that provides watch and stat operations.
+            stabilize_seconds: Delay between file-size checks.
+        """
         self.files = files
         self.stabilize_seconds = stabilize_seconds
 
     def startup_scan(self, dropzone: FileRef) -> Iterator[FileRef]:
-        """Yield stable files already present in dropzone."""
+        """Yield stable files already present in dropzone.
+
+        Args:
+            dropzone: Root directory to scan.
+
+        Yields:
+            FileRef: Stable non-skipped files under the dropzone.
+        """
         for meta in self.files.walk(dropzone):
             if self._should_skip(meta.ref):
                 continue
@@ -29,7 +41,14 @@ class StableFileWatcher:
                 yield meta.ref
 
     def iter_stable_events(self, dropzone: FileRef) -> Iterator[FileRef]:
-        """Yield stable file refs from filesystem events."""
+        """Yield stable file refs from filesystem events.
+
+        Args:
+            dropzone: Root directory to watch.
+
+        Yields:
+            FileRef: Stable file references for supported event kinds.
+        """
         for event in self.files.watch(dropzone):
             if event.kind not in {"created", "modified", "moved"}:
                 continue
@@ -43,7 +62,14 @@ class StableFileWatcher:
         self.files.stop_watch()
 
     def _is_stable(self, ref: FileRef) -> bool:
-        """Return whether a file size remains stable across a short interval."""
+        """Return whether a file size remains stable across a short interval.
+
+        Args:
+            ref: File reference to check.
+
+        Returns:
+            bool: `True` when file size is unchanged and the target is not a directory.
+        """
         if not self.files.exists(ref):
             return False
         first_meta = self.files.stat(ref)
@@ -60,6 +86,13 @@ class StableFileWatcher:
         return first == second
 
     def _should_skip(self, ref: FileRef) -> bool:
-        """Return whether a file should be ignored."""
+        """Return whether a file should be ignored.
+
+        Args:
+            ref: File reference to evaluate.
+
+        Returns:
+            bool: `True` when the filename matches skip prefixes or suffixes.
+        """
         name = self.files.name_of(ref)
         return name.startswith(SKIP_PREFIXES) or name.endswith(SKIP_SUFFIXES)

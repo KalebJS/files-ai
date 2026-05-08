@@ -10,7 +10,11 @@ from files_ai.storage import LocalFiles
 
 
 def test_extract_text_file(tmp_path: Path) -> None:
-    """Extract text content from a plain text file."""
+    """Extract text content from a plain text file.
+
+    Args:
+        tmp_path: Temporary test directory.
+    """
     files = LocalFiles(tmp_path)
     drop = FileRef("local", "/dropzone")
     files.make_dir(drop)
@@ -25,7 +29,11 @@ def test_extract_text_file(tmp_path: Path) -> None:
 
 
 def test_extract_generic_name_fallbacks_to_filename(tmp_path: Path) -> None:
-    """Fallback to filename when no extractable content exists."""
+    """Fallback to filename when no extractable content exists.
+
+    Args:
+        tmp_path: Temporary test directory.
+    """
     files = LocalFiles(tmp_path)
     drop = FileRef("local", "/dropzone")
     files.make_dir(drop)

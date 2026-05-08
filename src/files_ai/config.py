@@ -38,5 +38,9 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return cached settings instance."""
+    """Return cached settings instance.
+
+    Returns:
+        Settings: Cached settings object.
+    """
     return Settings()

@@ -9,11 +9,22 @@ class DummyAgent:
     """Minimal fake agent used for deterministic tests."""
 
     def __init__(self, payload: str) -> None:
-        """Store response payload."""
+        """Store response payload.
+
+        Args:
+            payload: Static output text to return from `invoke`.
+        """
         self.payload = payload
 
     def invoke(self, _: object) -> dict[str, object]:
-        """Return static payload in agent-like shape."""
+        """Return static payload in agent-like shape.
+
+        Args:
+            _: Unused request payload.
+
+        Returns:
+            dict[str, object]: Agent-like response dictionary.
+        """
         return {"output": self.payload}
 
 

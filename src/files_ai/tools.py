@@ -14,7 +14,15 @@ from .store import Store
 
 @dataclass
 class ToolContext:
-    """Shared dependencies used by organizer tools."""
+    """Shared dependencies used by organizer tools.
+
+    Attributes:
+        files: Storage backend.
+        store: Persistent metadata store.
+        organized_root: Root directory for organized files.
+        quarantine_root: Root directory for quarantined files.
+        dry_run: Whether move operations should avoid filesystem writes.
+    """
 
     files: Files
     store: Store
@@ -27,11 +35,22 @@ class OrganizerTools:
     """Domain operations for folder proposal and file moves."""
 
     def __init__(self, ctx: ToolContext) -> None:
-        """Store tool dependencies."""
+        """Store tool dependencies.
+
+        Args:
+            ctx: Shared tool dependencies.
+        """
         self.ctx = ctx
 
     def list_tree(self, max_depth: int = 4) -> list[str]:
-        """List organized-folder tree paths."""
+        """List organized-folder tree paths.
+
+        Args:
+            max_depth: Maximum folder depth to include.
+
+        Returns:
+            list[str]: Sorted folder paths under organized root.
+        """
         return sorted(
             ref.path
             for ref in self.ctx.files.walk_dirs(
@@ -40,7 +59,14 @@ class OrganizerTools:
         )
 
     def propose_folder(self, label: str) -> str:
-        """Resolve or create a folder from a semantic label."""
+        """Resolve or create a folder from a semantic label.
+
+        Args:
+            label: Free-form folder label.
+
+        Returns:
+            str: Resolved folder path.
+        """
         canonical = _canonical(label)
         cached = self.ctx.store.get_folder(canonical)
         if cached:
@@ -52,7 +78,17 @@ class OrganizerTools:
     def move_file(
         self, src: FileRef, folder: str, *, mime: str | None, extracted_chars: int
     ) -> MoveResult:
-        """Move a file into a target organized folder."""
+        """Move a file into a target organized folder.
+
+        Args:
+            src: Source file reference.
+            folder: Destination folder relative path.
+            mime: MIME type when known.
+            extracted_chars: Number of extracted text characters.
+
+        Returns:
+            MoveResult: Outcome of the move attempt.
+        """
         dst_folder = self.ctx.files.join(self.ctx.organized_root, folder)
         return move_into_folder(
             files=self.ctx.files,
@@ -67,7 +103,16 @@ class OrganizerTools:
     def quarantine_file(
         self, src: FileRef, *, mime: str | None, extracted_chars: int
     ) -> MoveResult:
-        """Move a file into quarantine."""
+        """Move a file into quarantine.
+
+        Args:
+            src: Source file reference.
+            mime: MIME type when known.
+            extracted_chars: Number of extracted text characters.
+
+        Returns:
+            MoveResult: Outcome of the quarantine move.
+        """
         return move_into_folder(
             files=self.ctx.files,
             store=self.ctx.store,
@@ -80,12 +125,26 @@ class OrganizerTools:
 
 
 def _canonical(value: str) -> str:
-    """Normalize text into a canonical key."""
+    """Normalize text into a canonical key.
+
+    Args:
+        value: Free-form text.
+
+    Returns:
+        str: Lowercased underscore-delimited key.
+    """
     return re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
 
 
 def _folderize(value: str) -> str:
-    """Normalize free text into a folder path."""
+    """Normalize free text into a folder path.
+
+    Args:
+        value: Free-form folder text.
+
+    Returns:
+        str: Sanitized folder path limited to four segments.
+    """
     cleaned = re.sub(r"[^a-zA-Z0-9/_ -]", "", value).strip()
     if not cleaned:
         return "Unsorted"

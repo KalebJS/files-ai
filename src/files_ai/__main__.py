@@ -89,7 +89,14 @@ def main() -> None:
 def _process_file(
     ref: FileRef, *, settings: Settings, tools: OrganizerTools, agent: object
 ) -> None:
-    """Process one file end-to-end and persist decision metadata."""
+    """Process one file end-to-end and persist decision metadata.
+
+    Args:
+        ref: Source file reference.
+        settings: Runtime settings.
+        tools: Organizer tool facade.
+        agent: Routing agent with an `invoke` interface.
+    """
     log = structlog.get_logger("files_ai.processor").bind(
         path=ref.path,
         source_rel_dir=ref.extra.get("dropzone_relative_dir", ""),
@@ -141,7 +148,15 @@ def _process_file(
 
 
 def _with_dropzone_metadata(ref: FileRef, dropzone: FileRef) -> FileRef:
-    """Attach dropzone-relative folder metadata to a file reference."""
+    """Attach dropzone-relative folder metadata to a file reference.
+
+    Args:
+        ref: File reference to enrich.
+        dropzone: Dropzone root reference.
+
+    Returns:
+        FileRef: New file reference with `dropzone_relative_dir` in `extra`.
+    """
     rel_dir = ""
     try:
         rel_path = PurePosixPath(ref.path).relative_to(PurePosixPath(dropzone.path))
@@ -162,7 +177,18 @@ def _apply_decision(
     mime: str | None,
     extracted_chars: int,
 ):
-    """Apply routing decision by moving file or quarantining it."""
+    """Apply routing decision by moving file or quarantining it.
+
+    Args:
+        ref: Source file reference.
+        decision: Routing decision from the agent.
+        tools: Organizer tool facade.
+        mime: MIME type when known.
+        extracted_chars: Number of extracted text characters.
+
+    Returns:
+        MoveResult: Move/quarantine operation result.
+    """
     if decision.quarantine:
         return tools.quarantine_file(ref, mime=mime, extracted_chars=extracted_chars)
     folder = tools.propose_folder(decision.folder)

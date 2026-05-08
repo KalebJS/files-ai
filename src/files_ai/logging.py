@@ -8,7 +8,11 @@ import structlog
 
 
 def configure_logging(level: str = "INFO") -> None:
-    """Configure stdlib logging and structlog processors."""
+    """Configure stdlib logging and structlog processors.
+
+    Args:
+        level: Logging level name.
+    """
     logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO))
     structlog.configure(
         processors=[

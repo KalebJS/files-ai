@@ -9,7 +9,11 @@ from files_ai.storage import LocalFiles
 
 
 def test_protocol_conformance_surface(tmp_path: Path) -> None:
-    """Validate core Files protocol operations for local backend."""
+    """Validate core `Files` protocol operations for local backend.
+
+    Args:
+        tmp_path: Temporary test directory.
+    """
     files = LocalFiles(tmp_path)
     root = FileRef("local", "/dropzone")
     files.make_dir(root)

@@ -38,7 +38,19 @@ CREATE TABLE IF NOT EXISTS folder_index (
 
 @dataclass(frozen=True)
 class FileRow:
-    """Materialized file row shape."""
+    """Materialized file row shape.
+
+    Attributes:
+        id: Primary key.
+        sha256: File content hash.
+        backend: Backend name that stored the file.
+        src_path: Original source path.
+        dst_path: Final destination path when moved.
+        size: Source file size in bytes.
+        mime: MIME type when known.
+        extracted_chars: Number of extracted text characters.
+        moved_at: ISO timestamp when moved.
+    """
 
     id: int
     sha256: str
@@ -55,7 +67,11 @@ class Store:
     """Repository-backed store for metadata and decision history."""
 
     def __init__(self, db_path: str | Path) -> None:
-        """Initialize database connection and schema."""
+        """Initialize database connection and schema.
+
+        Args:
+            db_path: SQLite database file path.
+        """
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.db_path)
@@ -68,7 +84,14 @@ class Store:
         self.conn.close()
 
     def has_hash(self, sha256: str) -> bool:
-        """Return whether a file hash already exists."""
+        """Return whether a file hash already exists.
+
+        Args:
+            sha256: File hash to check.
+
+        Returns:
+            bool: `True` when the hash is present.
+        """
         row = self.conn.execute(
             "SELECT 1 FROM files WHERE sha256 = ? LIMIT 1", (sha256,)
         ).fetchone()
@@ -84,7 +107,19 @@ class Store:
         mime: str | None,
         extracted_chars: int,
     ) -> int:
-        """Insert a file record and return its row id."""
+        """Insert a file record and return its row id.
+
+        Args:
+            sha256: File content hash.
+            backend: Backend name.
+            src_path: Source path in the backend.
+            size: Source file size in bytes.
+            mime: MIME type when known.
+            extracted_chars: Number of extracted text characters.
+
+        Returns:
+            int: Inserted row id.
+        """
         cur = self.conn.execute(
             """
             INSERT INTO files(sha256, backend, src_path, size, mime, extracted_chars)
@@ -96,7 +131,12 @@ class Store:
         return int(cur.lastrowid)
 
     def set_destination(self, file_id: int, dst_path: str) -> None:
-        """Set final destination path and move timestamp for a file."""
+        """Set final destination path and move timestamp for a file.
+
+        Args:
+            file_id: File row id.
+            dst_path: Destination path after move.
+        """
         moved_at = datetime.now(timezone.utc).isoformat()
         self.conn.execute(
             "UPDATE files SET dst_path = ?, moved_at = ? WHERE id = ?",
@@ -107,7 +147,14 @@ class Store:
     def add_decision(
         self, file_id: int, *, reasoning: str, tools_called: str, model: str
     ) -> None:
-        """Persist model decision details for one file."""
+        """Persist model decision details for one file.
+
+        Args:
+            file_id: Related file row id.
+            reasoning: Model reasoning summary.
+            tools_called: Tools or operation used.
+            model: Model identifier.
+        """
         self.conn.execute(
             """
             INSERT INTO decisions(file_id, reasoning, tools_called, model, created_at)
@@ -124,7 +171,12 @@ class Store:
         self.conn.commit()
 
     def upsert_folder(self, canonical: str, path: str) -> None:
-        """Upsert folder mapping and increment usage count."""
+        """Upsert folder mapping and increment usage count.
+
+        Args:
+            canonical: Canonical label key.
+            path: Folder path associated with the key.
+        """
         self.conn.execute(
             """
             INSERT INTO folder_index(canonical, path, use_count)
@@ -138,7 +190,14 @@ class Store:
         self.conn.commit()
 
     def get_folder(self, canonical: str) -> str | None:
-        """Fetch stored folder path for a canonical label."""
+        """Fetch stored folder path for a canonical label.
+
+        Args:
+            canonical: Canonical label key.
+
+        Returns:
+            str | None: Stored folder path when found.
+        """
         row = self.conn.execute(
             "SELECT path FROM folder_index WHERE canonical = ?", (canonical,)
         ).fetchone()
