@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from files_ai.agent import AgentParseError
@@ -18,16 +20,24 @@ class DummyAgent:
             payload: Static output text to return from `invoke`.
         """
         self.payload = payload
+        self.last_request: dict[str, object] | None = None
+        self.last_config: dict[str, object] | None = None
 
-    def invoke(self, _: object) -> dict[str, object]:
+    def invoke(self, request: object, **kwargs: object) -> dict[str, object]:
         """Return static payload in agent-like shape.
 
         Args:
-            _: Unused request payload.
+            request: Request payload.
+            **kwargs: Optional invoke keyword arguments.
 
         Returns:
             dict[str, object]: Agent-like response dictionary.
         """
+        if isinstance(request, dict):
+            self.last_request = request
+        config = kwargs.get("config")
+        if isinstance(config, dict):
+            self.last_config = config
         return {"output": self.payload}
 
 
@@ -94,3 +104,92 @@ def test_decide_folder_sanitizes_folder() -> None:
         tree_snapshot=[],
     )
     assert decision.folder == "Finance/Invld/2026"
+
+
+def test_decide_folder_prompt_discourages_unsorted() -> None:
+    """Exclude Unsorted from tree context and include source folder signal."""
+    agent = DummyAgent(
+        (
+            '{"folder":"Code/C++","reasoning":"source dir and extension",'
+            '"confidence":0.9,"quarantine":false}'
+        )
+    )
+    decide_folder(
+        agent,
+        filename="Lab8.cpp",
+        extracted_text="data structure assignment",
+        tree_snapshot=["Unsorted", "Finance/Invoices"],
+        source_relative_dir="Security",
+    )
+    assert agent.last_request is not None
+    messages = agent.last_request.get("messages")
+    assert isinstance(messages, list)
+    content = messages[0]["content"]
+    assert "source_relative_dir=Security" in content
+    assert "tree=['Finance/Invoices']" in content
+    assert "unsorted_present=True" in content
+    assert "Avoid Unsorted except as a true last resort." in content
+
+
+def test_decide_folder_sends_trace_metadata() -> None:
+    """Attach LangSmith-compatible tags and metadata to invoke config."""
+    agent = DummyAgent(
+        (
+            '{"folder":"Code/C++","reasoning":"source dir and extension",'
+            '"confidence":0.9,"quarantine":false}'
+        )
+    )
+    decide_folder(
+        agent,
+        filename="Lab8.cpp",
+        extracted_text="data structure assignment",
+        tree_snapshot=["Unsorted", "Finance/Invoices"],
+        source_relative_dir="Security",
+    )
+    assert agent.last_config == {
+        "tags": ["files-ai", "folder-routing"],
+        "metadata": {
+            "filename": "Lab8.cpp",
+            "source_relative_dir": "Security",
+            "tree_size": 2,
+        },
+    }
+
+
+def test_build_agent_configures_langsmith(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set tracing env vars from runtime settings when tracing is enabled."""
+    monkeypatch.setenv("LANGSMITH_TRACING", "false")
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_PROJECT", raising=False)
+    monkeypatch.delenv("LANGSMITH_ENDPOINT", raising=False)
+    captured: dict[str, object] = {}
+
+    class FakeChatOllama:
+        """Test double for ChatOllama constructor."""
+
+        def __init__(self, **kwargs: object) -> None:
+            captured["llm_kwargs"] = kwargs
+
+    def fake_create_agent(**kwargs: object) -> object:
+        captured["agent_kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr("files_ai.agent.ChatOllama", FakeChatOllama)
+    monkeypatch.setattr("files_ai.agent.create_agent", fake_create_agent)
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGSMITH_PROJECT", "files-ai-tests")
+    monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+
+    from files_ai.agent import build_agent
+    from files_ai.config import Settings
+
+    settings = Settings()
+    build_agent(settings)
+
+    assert os.environ["LANGSMITH_TRACING"] == "true"
+    assert os.environ["LANGSMITH_API_KEY"] == "test-key"
+    assert os.environ["LANGSMITH_PROJECT"] == "files-ai-tests"
+    assert os.environ["LANGSMITH_ENDPOINT"] == "https://api.smith.langchain.com"
+    assert isinstance(captured["llm_kwargs"], dict)
+    assert isinstance(captured["agent_kwargs"], dict)

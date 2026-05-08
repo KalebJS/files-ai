@@ -123,6 +123,7 @@ def _process_file(
         filename=tools.ctx.files.name_of(ref),
         extracted_text=extraction.text,
         tree_snapshot=snapshot,
+        source_relative_dir=str(ref.extra.get("dropzone_relative_dir", "")),
     )
     result = _apply_decision(
         ref=ref,

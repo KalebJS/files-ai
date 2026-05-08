@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     ollama_api_key: SecretStr = SecretStr("")
     ollama_base_url: str = "https://ollama.com"
     model: str = "gpt-oss:120b-cloud"
+    langsmith_tracing: bool = False
+    langsmith_api_key: SecretStr = SecretStr("")
+    langsmith_project: str = "files-ai"
+    langsmith_endpoint: str = ""
 
     dry_run: bool = False
     max_depth: int = 4

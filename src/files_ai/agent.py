@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 from typing import Protocol
@@ -16,38 +17,58 @@ from pydantic import field_validator
 
 from .config import Settings
 
-SYSTEM_PROMPT = """You are an AI file organizer.
+SYSTEM_PROMPT = """You are an AI file organizer for a personal/work archive.
 Return JSON only with keys:
 - reasoning: short rationale
 - folder: target folder under organized root
 - confidence: number in [0,1]
 - quarantine: boolean
-Keep folder depth <= 4.
+
+Hard rules:
+1) Keep folder depth <= 4 and use safe names.
+2) Prefer a specific semantic destination, not generic catch-all bins.
+3) Use an existing folder from tree only when it is clearly the best fit.
+4) If no existing folder fits, create a concise new folder path based on content.
+5) "Unsorted" is a last-resort failure bucket and should almost never be chosen.
+6) Only set quarantine=true for unsafe, suspicious, or policy-sensitive content.
+
+Folder strategy:
+- First classify by strongest evidence from filename, source_relative_dir, and text.
+- Reuse existing paths when strongly compatible.
+- Otherwise create a new path like:
+  - Academics/Coursework
+  - Code/C++
+  - Legal/Housing
+  - Media/Photos
+  - Finance/Statements
 
 Examples:
 Input:
 filename=invoice_2026_april.pdf
+source_relative_dir=
 tree=['Finance/Invoices', 'Finance/Receipts', 'Legal/Contracts']
 text=Invoice #1042 due on 2026-05-15 for consulting services.
 Output:
-{"reasoning":"invoice terms and due date",
-"folder":"Finance/Invoices","confidence":0.93,"quarantine":false}
+{"reasoning":"invoice terms and due date","folder":"Finance/Invoices",
+"confidence":0.93,"quarantine":false}
 
 Input:
-filename=beach_trip.jpg
-tree=['Media/Photos', 'Media/Screenshots']
-text=Photo from summer vacation at the beach.
+filename=Lab8.cpp
+source_relative_dir=Security
+tree=['Unsorted']
+text=C++ assignment implementing data structures and traversal.
 Output:
-{"reasoning":"photo content and filename",
-"folder":"Media/Photos","confidence":0.84,"quarantine":false}
+{"reasoning":"coursework source code signals C++ category","folder":"Code/C++",
+"confidence":0.88,"quarantine":false}
 
 Input:
-filename=unknown.bin
-tree=['Code/Misc', 'Unsorted']
-text=Binary blob with unreadable or ambiguous content.
+filename=Working_with_Real_Estate_Agents_Disclosure.pdf
+source_relative_dir=Legal
+tree=['Unsorted', 'Legal']
+text=Buyer disclosure and agency agreement terms.
 Output:
-{"reasoning":"insufficient semantic signal",
-"folder":"Unsorted","confidence":0.31,"quarantine":false}
+{"reasoning":"real-estate legal document","folder":"Legal/Housing",
+"confidence":0.9,"quarantine":false}
 """
 
 
@@ -58,7 +79,7 @@ class AgentParseError(ValueError):
 class AgentProtocol(Protocol):
     """Minimal protocol for agent usage in this project."""
 
-    def invoke(self, payload: dict[str, Any]) -> Any:
+    def invoke(self, payload: dict[str, Any], **kwargs: Any) -> Any:
         """Run the agent and return a response payload."""
 
 
@@ -106,6 +127,7 @@ def build_agent(settings: Settings) -> AgentProtocol:
     Returns:
         AgentProtocol: Agent object compatible with `.invoke(...)`.
     """
+    _configure_langsmith(settings)
     llm = ChatOllama(
         model=settings.model,
         base_url=settings.ollama_base_url,
@@ -125,6 +147,7 @@ def decide_folder(
     filename: str,
     extracted_text: str,
     tree_snapshot: list[str],
+    source_relative_dir: str = "",
 ) -> AgentDecision:
     """Ask the agent for a folder decision and normalize output.
 
@@ -133,17 +156,27 @@ def decide_folder(
         filename: Source filename.
         extracted_text: Extracted file text used for routing.
         tree_snapshot: Existing organized folder paths for context.
+        source_relative_dir: Dropzone-relative source folder context.
 
     Returns:
         AgentDecision: Normalized routing decision.
     """
-    prompt = (
-        "Choose folder for file.\n"
-        f"filename={filename}\n"
-        f"tree={tree_snapshot}\n"
-        f"text={extracted_text[:4000]}"
+    prompt = _build_prompt(
+        filename=filename,
+        extracted_text=extracted_text,
+        tree_snapshot=tree_snapshot,
+        source_relative_dir=source_relative_dir,
     )
-    response = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
+    payload = {"messages": [{"role": "user", "content": prompt}]}
+    response = _invoke_agent(
+        agent,
+        payload,
+        metadata={
+            "filename": filename,
+            "source_relative_dir": source_relative_dir or ".",
+            "tree_size": len(tree_snapshot),
+        },
+    )
     content = _extract_content(response)
     payload = _extract_json_str(content)
     if payload is None:
@@ -154,6 +187,64 @@ def decide_folder(
         raise AgentParseError(
             f"Agent response failed schema validation: {content!r}"
         ) from exc
+
+
+def _configure_langsmith(settings: Settings) -> None:
+    """Configure LangSmith tracing environment for LangChain runtime."""
+    if not settings.langsmith_tracing:
+        os.environ["LANGSMITH_TRACING"] = "false"
+        return
+    os.environ["LANGSMITH_TRACING"] = "true"
+    key = settings.langsmith_api_key.get_secret_value()
+    if key:
+        os.environ["LANGSMITH_API_KEY"] = key
+    if settings.langsmith_project:
+        os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
+    if settings.langsmith_endpoint:
+        os.environ["LANGSMITH_ENDPOINT"] = settings.langsmith_endpoint
+
+
+def _build_prompt(
+    *,
+    filename: str,
+    extracted_text: str,
+    tree_snapshot: list[str],
+    source_relative_dir: str,
+) -> str:
+    """Build a routing prompt with stronger anti-Unsorted guidance."""
+    filtered_tree = [folder for folder in tree_snapshot if folder != "Unsorted"]
+    unsorted_present = len(filtered_tree) != len(tree_snapshot)
+    return (
+        "Choose folder for file.\n"
+        "Decision policy:\n"
+        "- Favor specific semantic categories.\n"
+        "- Reuse an existing folder only when strongly correct.\n"
+        "- If none fit, create a new concise folder path.\n"
+        "- Avoid Unsorted except as a true last resort.\n"
+        f"filename={filename}\n"
+        f"source_relative_dir={source_relative_dir}\n"
+        f"tree={filtered_tree}\n"
+        f"unsorted_present={unsorted_present}\n"
+        f"text={extracted_text[:4000]}"
+    )
+
+
+def _invoke_agent(
+    agent: AgentProtocol,
+    payload: dict[str, Any],
+    metadata: dict[str, str | int],
+) -> Any:
+    """Invoke agent with optional trace metadata when supported."""
+    try:
+        return agent.invoke(
+            payload,
+            config={
+                "tags": ["files-ai", "folder-routing"],
+                "metadata": metadata,
+            },
+        )
+    except TypeError:
+        return agent.invoke(payload)
 
 
 def _extract_content(response: Any) -> str:
