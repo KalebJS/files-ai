@@ -22,6 +22,7 @@ from .folder_agent import build_folder_agent
 from .folder_agent import decide_folder_action
 from .logging import configure_logging
 from .storage import FileRef
+from .storage import Files
 from .storage import NotFound
 from .storage import get_files
 from .store import Store
@@ -140,16 +141,28 @@ def _process_ref(
         )
         return
     if watcher.is_stable(ref):
-        _process_file(ref, settings=settings, tools=tools, agent=file_agent)
+        _process_file(
+            ref,
+            dropzone=dropzone,
+            settings=settings,
+            tools=tools,
+            agent=file_agent,
+        )
 
 
 def _process_file(
-    ref: FileRef, *, settings: Settings, tools: OrganizerTools, agent: AgentProtocol
+    ref: FileRef,
+    *,
+    dropzone: FileRef,
+    settings: Settings,
+    tools: OrganizerTools,
+    agent: AgentProtocol,
 ) -> None:
     """Process one file end-to-end and persist decision metadata.
 
     Args:
         ref: Source file reference.
+        dropzone: Dropzone root reference.
         settings: Runtime settings.
         tools: Organizer tool facade.
         agent: Routing agent with an `invoke` interface.
@@ -188,6 +201,12 @@ def _process_file(
         mime=extraction.mime,
         extracted_chars=len(extraction.text),
     )
+    if result.destination is not None and not result.dry_run:
+        _prune_dropzone_ancestors(
+            files=tools.ctx.files,
+            ref=ref,
+            dropzone=dropzone,
+        )
     if result.file_id is not None:
         tools.ctx.store.add_decision(
             result.file_id,
@@ -246,6 +265,12 @@ def _process_directory(
             folder_agent=folder_agent,
             watcher=watcher,
         )
+        if not tools.ctx.dry_run:
+            _prune_dropzone_ancestors(
+                files=tools.ctx.files,
+                ref=ref,
+                dropzone=dropzone,
+            )
         return
     result = _apply_folder_decision(
         ref=ref,
@@ -261,6 +286,8 @@ def _process_directory(
             ),
             model=settings.model,
         )
+    if result.destination is not None and not result.dry_run:
+        _prune_dropzone_ancestors(files=tools.ctx.files, ref=ref, dropzone=dropzone)
     log.info(
         "folder_processed",
         destination=(result.destination.path if result.destination else None),
@@ -292,7 +319,13 @@ def _recurse_directory(
             continue
         if not meta.is_dir:
             if watcher.is_stable(child):
-                _process_file(child, settings=settings, tools=tools, agent=file_agent)
+                _process_file(
+                    child,
+                    dropzone=dropzone,
+                    settings=settings,
+                    tools=tools,
+                    agent=file_agent,
+                )
             continue
         snapshot = build_tree_snapshot(
             tools.ctx.files, tools.ctx.organized_root, max_depth=settings.max_depth
@@ -312,6 +345,12 @@ def _recurse_directory(
             decision=decision,
             tools=tools,
         )
+        if result.destination is not None and not result.dry_run:
+            _prune_dropzone_ancestors(
+                files=tools.ctx.files,
+                ref=child,
+                dropzone=dropzone,
+            )
         if result.file_id is not None:
             tools.ctx.store.add_decision(
                 result.file_id,
@@ -321,6 +360,27 @@ def _recurse_directory(
                 ),
                 model=settings.model,
             )
+
+
+def _prune_dropzone_ancestors(*, files: Files, ref: FileRef, dropzone: FileRef) -> None:
+    """Remove empty ancestors up to but not including the dropzone root."""
+    current = files.parent(ref)
+    dropzone_path = PurePosixPath(dropzone.path)
+    while True:
+        current_path = PurePosixPath(current.path)
+        if current_path == dropzone_path:
+            return
+        if dropzone_path not in current_path.parents:
+            return
+        if not files.exists(current):
+            current = files.parent(current)
+            continue
+        if not files.stat(current).is_dir:
+            return
+        if any(True for _ in files.iterdir(current)):
+            return
+        files.delete(current)
+        current = files.parent(current)
 
 
 def _with_dropzone_metadata(ref: FileRef, dropzone: FileRef) -> FileRef:

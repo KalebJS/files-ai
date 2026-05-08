@@ -111,6 +111,9 @@ class OrganizerTools:
             store=self.ctx.store,
             src=src,
             folder=dst_folder,
+            duplicate_folder=self.ctx.files.join(
+                self.ctx.quarantine_root, "duplicates"
+            ),
             mime=mime,
             extracted_chars=extracted_chars,
             dry_run=self.ctx.dry_run,
@@ -134,6 +137,9 @@ class OrganizerTools:
             store=self.ctx.store,
             src=src,
             folder=self.ctx.quarantine_root,
+            duplicate_folder=self.ctx.files.join(
+                self.ctx.quarantine_root, "duplicates"
+            ),
             mime=mime,
             extracted_chars=extracted_chars,
             dry_run=self.ctx.dry_run,

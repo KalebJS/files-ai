@@ -34,6 +34,7 @@ def move_into_folder(
     store: Store,
     src: FileRef,
     folder: FileRef,
+    duplicate_folder: FileRef | None = None,
     mime: str | None,
     extracted_chars: int,
     dry_run: bool = False,
@@ -45,6 +46,7 @@ def move_into_folder(
         store: Persistent metadata store.
         src: Source file reference.
         folder: Destination folder reference.
+        duplicate_folder: Destination folder for duplicate items.
         mime: MIME type when known.
         extracted_chars: Number of extracted text characters.
         dry_run: Whether to avoid filesystem writes.
@@ -56,8 +58,25 @@ def move_into_folder(
     src_meta = files.stat(src)
     sha256 = _source_hash(files=files, src=src, is_dir=src_meta.is_dir)
     if store.has_hash(sha256):
+        if duplicate_folder is None:
+            return MoveResult(
+                file_id=None, destination=None, dry_run=dry_run, duplicate=True
+            )
+        duplicate_dst_folder = _duplicate_folder(
+            files=files,
+            src=src,
+            duplicate_folder=duplicate_folder,
+        )
+        files.make_dir(duplicate_dst_folder, parents=True, exist_ok=True)
+        destination = _next_available_destination(
+            files=files,
+            folder=duplicate_dst_folder,
+            name=filename,
+        )
+        if not dry_run:
+            files.move(src, destination)
         return MoveResult(
-            file_id=None, destination=None, dry_run=dry_run, duplicate=True
+            file_id=None, destination=destination, dry_run=dry_run, duplicate=True
         )
 
     file_id = store.insert_file(
@@ -132,3 +151,18 @@ def _source_hash(*, files: Files, src: FileRef, is_dir: bool) -> str:
         digest.update(files.hash(meta.ref).encode("ascii"))
         digest.update(b"\0")
     return f"dir:{digest.hexdigest()}"
+
+
+def _duplicate_folder(
+    *, files: Files, src: FileRef, duplicate_folder: FileRef
+) -> FileRef:
+    """Build duplicate destination folder preserving source-relative dir."""
+    rel_dir = str(src.extra.get("dropzone_relative_dir", "")).strip()
+    if not rel_dir:
+        return duplicate_folder
+    parts = [
+        part for part in PurePosixPath(rel_dir).parts if part not in {"", ".", "/"}
+    ]
+    if not parts:
+        return duplicate_folder
+    return files.join(duplicate_folder, *parts)

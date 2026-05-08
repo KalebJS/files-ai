@@ -19,8 +19,10 @@ def test_move_into_folder_and_dedupe(tmp_path: Path) -> None:
     files = LocalFiles(tmp_path)
     drop = FileRef("local", "/dropzone")
     org = FileRef("local", "/organized/Receipts")
+    dup = FileRef("local", "/quarantine/duplicates")
     files.make_dir(drop)
     files.make_dir(org)
+    files.make_dir(dup)
     db = Store(tmp_path / "state.db")
     try:
         ref1 = files.join(drop, "receipt.txt")
@@ -34,6 +36,7 @@ def test_move_into_folder_and_dedupe(tmp_path: Path) -> None:
             store=db,
             src=ref1,
             folder=org,
+            duplicate_folder=dup,
             mime="text/plain",
             extracted_chars=4,
         )
@@ -42,12 +45,17 @@ def test_move_into_folder_and_dedupe(tmp_path: Path) -> None:
             store=db,
             src=ref2,
             folder=org,
+            duplicate_folder=dup,
             mime="text/plain",
             extracted_chars=4,
         )
         assert first.destination is not None
         assert files.exists(first.destination)
         assert second.duplicate
+        assert second.destination is not None
+        assert files.exists(second.destination)
+        assert second.destination.path == "/quarantine/duplicates/receipt-copy.txt"
+        assert not files.exists(ref2)
     finally:
         db.close()
 
@@ -57,8 +65,10 @@ def test_move_directory_into_folder_and_dedupe(tmp_path: Path) -> None:
     files = LocalFiles(tmp_path)
     drop = FileRef("local", "/dropzone")
     org = FileRef("local", "/organized/Code/Projects")
+    dup = FileRef("local", "/quarantine/duplicates")
     files.make_dir(drop)
     files.make_dir(org)
+    files.make_dir(dup)
     db = Store(tmp_path / "state.db")
     try:
         ref1 = files.join(drop, "proj-a")
@@ -76,6 +86,7 @@ def test_move_directory_into_folder_and_dedupe(tmp_path: Path) -> None:
             store=db,
             src=ref1,
             folder=org,
+            duplicate_folder=dup,
             mime="inode/directory",
             extracted_chars=0,
         )
@@ -84,12 +95,17 @@ def test_move_directory_into_folder_and_dedupe(tmp_path: Path) -> None:
             store=db,
             src=ref2,
             folder=org,
+            duplicate_folder=dup,
             mime="inode/directory",
             extracted_chars=0,
         )
         assert first.destination is not None
         assert files.exists(first.destination)
         assert second.duplicate
+        assert second.destination is not None
+        assert files.exists(second.destination)
+        assert second.destination.path == "/quarantine/duplicates/proj-b"
+        assert not files.exists(ref2)
     finally:
         db.close()
 
@@ -118,6 +134,7 @@ def test_move_directory_hash_distinguishes_tree_layout(tmp_path: Path) -> None:
             store=db,
             src=ref1,
             folder=org,
+            duplicate_folder=FileRef("local", "/quarantine/duplicates"),
             mime="inode/directory",
             extracted_chars=0,
         )
@@ -126,6 +143,7 @@ def test_move_directory_hash_distinguishes_tree_layout(tmp_path: Path) -> None:
             store=db,
             src=ref2,
             folder=org,
+            duplicate_folder=FileRef("local", "/quarantine/duplicates"),
             mime="inode/directory",
             extracted_chars=0,
         )
