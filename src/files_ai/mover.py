@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
@@ -52,19 +53,19 @@ def move_into_folder(
         MoveResult: Operation result metadata.
     """
     filename = files.name_of(src)
-    sha256 = files.hash(src)
+    src_meta = files.stat(src)
+    sha256 = _source_hash(files=files, src=src, is_dir=src_meta.is_dir)
     if store.has_hash(sha256):
         return MoveResult(
             file_id=None, destination=None, dry_run=dry_run, duplicate=True
         )
 
-    meta = files.stat(src)
     file_id = store.insert_file(
         sha256=sha256,
         backend=src.backend,
         src_path=src.path,
-        size=meta.size,
-        mime=mime,
+        size=src_meta.size,
+        mime=mime if not src_meta.is_dir else "inode/directory",
         extracted_chars=extracted_chars,
     )
     files.make_dir(folder, parents=True, exist_ok=True)
@@ -114,3 +115,20 @@ def _split_name(name: str) -> tuple[str, str]:
     if not suffix:
         return name, ""
     return name[: -len(suffix)], suffix
+
+
+def _source_hash(*, files: Files, src: FileRef, is_dir: bool) -> str:
+    """Compute a deterministic content hash for files or directory trees."""
+    if not is_dir:
+        return files.hash(src)
+    digest = hashlib.sha256()
+    digest.update(b"dir-v1\0")
+    root = PurePosixPath(src.path)
+    file_metas = sorted(files.walk(src), key=lambda meta: meta.ref.path)
+    for meta in file_metas:
+        rel = PurePosixPath(meta.ref.path).relative_to(root).as_posix()
+        digest.update(rel.encode("utf-8", errors="ignore"))
+        digest.update(b"\0")
+        digest.update(files.hash(meta.ref).encode("ascii"))
+        digest.update(b"\0")
+    return f"dir:{digest.hexdigest()}"

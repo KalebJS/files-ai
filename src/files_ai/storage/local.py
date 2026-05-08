@@ -162,6 +162,24 @@ class LocalFiles:
                     continue
                 yield self.stat(ref)
 
+    def iterdir(self, root: FileRef) -> Iterator[FileMeta]:
+        """Yield direct child metadata under a directory.
+
+        Args:
+            root: Directory reference to list.
+
+        Yields:
+            FileMeta: Direct child metadata entries.
+        """
+        root_abs = self._to_abs_path(root)
+        if not root_abs.exists() or not root_abs.is_dir():
+            return
+        for child in sorted(root_abs.iterdir(), key=lambda path: path.name):
+            ref = self._from_abs_path(child)
+            if ref is None:
+                continue
+            yield self.stat(ref)
+
     def walk_dirs(self, root: FileRef, max_depth: int = 4) -> Iterator[FileRef]:
         """Recursively yield directory refs under root.
 
@@ -266,11 +284,15 @@ class LocalFiles:
         try:
             os.replace(src_abs, dst_abs)
         except OSError:
-            shutil.copy2(src_abs, dst_abs)
-            with dst_abs.open("rb+") as file_obj:
-                file_obj.flush()
-                os.fsync(file_obj.fileno())
-            src_abs.unlink()
+            if src_abs.is_dir():
+                shutil.copytree(src_abs, dst_abs, dirs_exist_ok=overwrite)
+                shutil.rmtree(src_abs)
+            else:
+                shutil.copy2(src_abs, dst_abs)
+                with dst_abs.open("rb+") as file_obj:
+                    file_obj.flush()
+                    os.fsync(file_obj.fileno())
+                src_abs.unlink()
         return dst
 
     def copy(self, src: FileRef, dst: FileRef, *, overwrite: bool = False) -> FileRef:

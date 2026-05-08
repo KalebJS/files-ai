@@ -147,7 +147,7 @@ def test_decide_folder_sends_trace_metadata() -> None:
         source_relative_dir="Security",
     )
     assert agent.last_config == {
-        "tags": ["files-ai", "folder-routing"],
+        "tags": ["file-agent"],
         "metadata": {
             "filename": "Lab8.cpp",
             "source_relative_dir": "Security",

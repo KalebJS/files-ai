@@ -89,6 +89,22 @@ class OrganizerTools:
         Returns:
             MoveResult: Outcome of the move attempt.
         """
+        return self.move_ref(src, folder, mime=mime, extracted_chars=extracted_chars)
+
+    def move_ref(
+        self, src: FileRef, folder: str, *, mime: str | None, extracted_chars: int
+    ) -> MoveResult:
+        """Move a file or directory into a target organized folder.
+
+        Args:
+            src: Source reference.
+            folder: Destination folder relative path.
+            mime: MIME type when known.
+            extracted_chars: Number of extracted text characters.
+
+        Returns:
+            MoveResult: Outcome of the move attempt.
+        """
         dst_folder = self.ctx.files.join(self.ctx.organized_root, folder)
         return move_into_folder(
             files=self.ctx.files,

@@ -49,3 +49,31 @@ def test_with_dropzone_metadata_tracks_relative_folder() -> None:
     nested = FileRef("local", "/dropzone/scans/2026/invoice.pdf")
     enriched = app._with_dropzone_metadata(nested, drop)
     assert enriched.extra["dropzone_relative_dir"] == "scans/2026"
+
+
+def test_should_skip_allows_git_directory(tmp_path: Path) -> None:
+    """Do not skip .git so folder agent can decide non-recursive handling."""
+    files = LocalFiles(tmp_path)
+    watcher = StableFileWatcher(files)
+    ref = FileRef("local", "/dropzone/.git")
+    assert not watcher.should_skip(ref)
+
+
+def test_iter_stable_events_includes_directories_when_enabled(
+    tmp_path: Path,
+) -> None:
+    """Yield directory events when include_directories=True."""
+    files = LocalFiles(tmp_path)
+    drop = FileRef("local", "/dropzone")
+    files.make_dir(drop)
+    dir_ref = files.join(drop, "project")
+    files.make_dir(dir_ref)
+
+    def _watch(*_: object) -> Iterator[FileEvent]:
+        return iter([FileEvent(kind="created", ref=dir_ref)])
+
+    files.watch = _watch  # type: ignore[method-assign]
+    watcher = StableFileWatcher(files, stabilize_seconds=0.0)
+
+    refs = list(watcher.iter_stable_events(drop, include_directories=True))
+    assert refs == [dir_ref]

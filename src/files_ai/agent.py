@@ -239,7 +239,7 @@ def _invoke_agent(
         return agent.invoke(
             payload,
             config={
-                "tags": ["files-ai", "folder-routing"],
+                "tags": ["file-agent"],
                 "metadata": metadata,
             },
         )

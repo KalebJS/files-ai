@@ -111,6 +111,16 @@ class Files(Protocol):
             FileMeta: Metadata entries for files under `root`.
         """
 
+    def iterdir(self, root: FileRef) -> Iterator[FileMeta]:
+        """Yield direct children under a directory.
+
+        Args:
+            root: Directory reference to list.
+
+        Yields:
+            FileMeta: Metadata entries for direct child files/directories.
+        """
+
     def walk_dirs(self, root: FileRef, max_depth: int = 4) -> Iterator[FileRef]:
         """Yield directories under root recursively.
 

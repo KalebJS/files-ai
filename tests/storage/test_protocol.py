@@ -26,3 +26,4 @@ def test_protocol_conformance_surface(tmp_path: Path) -> None:
     assert files.read_bytes(child, limit=2) == b"ab"
     assert files.stat(child).size == 3
     assert list(files.walk(root))
+    assert list(files.iterdir(root))

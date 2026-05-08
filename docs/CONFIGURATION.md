@@ -50,6 +50,25 @@ This document describes runtime configuration for `files-ai`.
 - `LOG_LEVEL`  
   Logging verbosity (e.g. `INFO`, `DEBUG`).
 
+## Folder crawling and dependency behavior
+
+- The crawler is directory-aware:
+  - files are routed with the file agent,
+  - folders are first evaluated by a folder-level decision step.
+
+- Folder decision outcomes:
+  - **move as module**: entire folder is moved together when children are
+    dependency-bound (for example software projects with `pyproject.toml`,
+    `package.json`, `go.mod`, etc.).
+  - **recurse**: folder is traversed and child files/folders are evaluated
+    independently when contents are mostly unrelated documents/media.
+
+- `.git` directories are never recursed. They are treated as dependency-bound
+  folder units.
+
+- Folder moves use directory-level dedupe hashing so duplicate folder trees can
+  be skipped similarly to duplicate files.
+
 ## Docker notes
 
 With Compose, set `HOST_DATA` to map host files into container `/data`:

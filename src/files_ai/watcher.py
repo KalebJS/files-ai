@@ -35,16 +35,19 @@ class StableFileWatcher:
             FileRef: Stable non-skipped files under the dropzone.
         """
         for meta in self.files.walk(dropzone):
-            if self._should_skip(meta.ref):
+            if self.should_skip(meta.ref):
                 continue
-            if self._is_stable(meta.ref):
+            if self.is_stable(meta.ref):
                 yield meta.ref
 
-    def iter_stable_events(self, dropzone: FileRef) -> Iterator[FileRef]:
+    def iter_stable_events(
+        self, dropzone: FileRef, *, include_directories: bool = False
+    ) -> Iterator[FileRef]:
         """Yield stable file refs from filesystem events.
 
         Args:
             dropzone: Root directory to watch.
+            include_directories: Whether to include directory events.
 
         Yields:
             FileRef: Stable file references for supported event kinds.
@@ -52,16 +55,22 @@ class StableFileWatcher:
         for event in self.files.watch(dropzone):
             if event.kind not in {"created", "modified", "moved"}:
                 continue
-            if self._should_skip(event.ref):
+            if self.should_skip(event.ref):
                 continue
-            if self._is_stable(event.ref):
+            if not self.files.exists(event.ref):
+                continue
+            meta = self.files.stat(event.ref)
+            if meta.is_dir and include_directories:
+                yield event.ref
+                continue
+            if self.is_stable(event.ref):
                 yield event.ref
 
     def stop(self) -> None:
         """Stop underlying backend watcher."""
         self.files.stop_watch()
 
-    def _is_stable(self, ref: FileRef) -> bool:
+    def is_stable(self, ref: FileRef) -> bool:
         """Return whether a file size remains stable across a short interval.
 
         Args:
@@ -85,7 +94,7 @@ class StableFileWatcher:
         second = second_meta.size
         return first == second
 
-    def _should_skip(self, ref: FileRef) -> bool:
+    def should_skip(self, ref: FileRef) -> bool:
         """Return whether a file should be ignored.
 
         Args:
@@ -95,4 +104,6 @@ class StableFileWatcher:
             bool: `True` when the filename matches skip prefixes or suffixes.
         """
         name = self.files.name_of(ref)
+        if name == ".git":
+            return False
         return name.startswith(SKIP_PREFIXES) or name.endswith(SKIP_SUFFIXES)
