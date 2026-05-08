@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 import structlog
 
 from .agent import AgentDecision
+from .agent import AgentProtocol
 from .agent import build_agent
 from .agent import decide_folder
 from .config import Settings
@@ -87,7 +88,7 @@ def main() -> None:
 
 
 def _process_file(
-    ref: FileRef, *, settings: Settings, tools: OrganizerTools, agent: object
+    ref: FileRef, *, settings: Settings, tools: OrganizerTools, agent: AgentProtocol
 ) -> None:
     """Process one file end-to-end and persist decision metadata.
 

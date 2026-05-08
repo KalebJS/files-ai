@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from files_ai.agent import AgentParseError
 from files_ai.agent import decide_folder
 
 
@@ -47,13 +50,47 @@ def test_decide_folder_parses_json_output() -> None:
     assert not decision.quarantine
 
 
-def test_decide_folder_falls_back_to_heuristic() -> None:
-    """Use heuristic fallback when model output is not parseable JSON."""
+def test_decide_folder_raises_on_invalid_output() -> None:
+    """Raise parse errors when model output is not parseable JSON."""
     agent = DummyAgent("not json")
+    with pytest.raises(AgentParseError):
+        decide_folder(
+            agent,
+            filename="receipt.txt",
+            extracted_text="receipt payment",
+            tree_snapshot=[],
+        )
+
+
+def test_decide_folder_clamps_confidence() -> None:
+    """Clamp confidence values above one."""
+    agent = DummyAgent(
+        (
+            '{"folder":"Finance/Invoices","reasoning":"invoice keywords",'
+            '"confidence":1.8,"quarantine":false}'
+        )
+    )
     decision = decide_folder(
         agent,
-        filename="receipt.txt",
-        extracted_text="receipt payment",
+        filename="invoice.txt",
+        extracted_text="invoice balance due",
         tree_snapshot=[],
     )
-    assert decision.folder.startswith("Finance/")
+    assert decision.confidence == 1.0
+
+
+def test_decide_folder_sanitizes_folder() -> None:
+    """Strip unsafe folder characters from model output."""
+    agent = DummyAgent(
+        (
+            '{"folder":"Finance/Inv@l!d/..//2026","reasoning":"invoice keywords",'
+            '"confidence":0.9,"quarantine":false}'
+        )
+    )
+    decision = decide_folder(
+        agent,
+        filename="invoice.txt",
+        extracted_text="invoice balance due",
+        tree_snapshot=[],
+    )
+    assert decision.folder == "Finance/Invld/2026"

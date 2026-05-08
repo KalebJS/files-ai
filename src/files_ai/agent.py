@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
 from typing import Any
+from typing import Protocol
 
 from langchain.agents import create_agent
 from langchain_ollama import ChatOllama
+from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import ValidationError
+from pydantic import field_validator
 
 from .config import Settings
 
@@ -19,11 +23,46 @@ Return JSON only with keys:
 - confidence: number in [0,1]
 - quarantine: boolean
 Keep folder depth <= 4.
+
+Examples:
+Input:
+filename=invoice_2026_april.pdf
+tree=['Finance/Invoices', 'Finance/Receipts', 'Legal/Contracts']
+text=Invoice #1042 due on 2026-05-15 for consulting services.
+Output:
+{"reasoning":"invoice terms and due date",
+"folder":"Finance/Invoices","confidence":0.93,"quarantine":false}
+
+Input:
+filename=beach_trip.jpg
+tree=['Media/Photos', 'Media/Screenshots']
+text=Photo from summer vacation at the beach.
+Output:
+{"reasoning":"photo content and filename",
+"folder":"Media/Photos","confidence":0.84,"quarantine":false}
+
+Input:
+filename=unknown.bin
+tree=['Code/Misc', 'Unsorted']
+text=Binary blob with unreadable or ambiguous content.
+Output:
+{"reasoning":"insufficient semantic signal",
+"folder":"Unsorted","confidence":0.31,"quarantine":false}
 """
 
 
-@dataclass(frozen=True)
-class AgentDecision:
+class AgentParseError(ValueError):
+    """Raised when the agent output cannot be parsed into a valid decision."""
+
+
+class AgentProtocol(Protocol):
+    """Minimal protocol for agent usage in this project."""
+
+    def invoke(self, payload: dict[str, Any]) -> Any:
+        """Run the agent and return a response payload."""
+
+
+class AgentDecision(BaseModel):
     """Structured folder-routing decision.
 
     Attributes:
@@ -33,20 +72,39 @@ class AgentDecision:
         quarantine: Whether the file should be quarantined.
     """
 
-    folder: str
+    model_config = ConfigDict(frozen=True)
+
+    folder: str = "Unsorted"
     reasoning: str
     confidence: float
     quarantine: bool = False
 
+    @field_validator("folder")
+    @classmethod
+    def _sanitize_folder(cls, folder: str) -> str:
+        """Normalize model folder output into safe path segments."""
+        parts: list[str] = []
+        for raw in folder.split("/"):
+            clean = re.sub(r"[^a-zA-Z0-9 _.-]", "", raw).strip().strip(".")
+            if clean:
+                parts.append(clean)
+        return "/".join(parts[:4]) or "Unsorted"
 
-def build_agent(settings: Settings) -> Any:
+    @field_validator("confidence")
+    @classmethod
+    def _clamp_confidence(cls, confidence: float) -> float:
+        """Clamp confidence to a valid probability interval."""
+        return max(0.0, min(1.0, confidence))
+
+
+def build_agent(settings: Settings) -> AgentProtocol:
     """Create a LangChain agent backed by ChatOllama.
 
     Args:
         settings: Runtime settings containing model and API config.
 
     Returns:
-        Any: Agent object compatible with `.invoke(...)`.
+        AgentProtocol: Agent object compatible with `.invoke(...)`.
     """
     llm = ChatOllama(
         model=settings.model,
@@ -62,7 +120,11 @@ def build_agent(settings: Settings) -> Any:
 
 
 def decide_folder(
-    agent: Any, *, filename: str, extracted_text: str, tree_snapshot: list[str]
+    agent: AgentProtocol,
+    *,
+    filename: str,
+    extracted_text: str,
+    tree_snapshot: list[str],
 ) -> AgentDecision:
     """Ask the agent for a folder decision and normalize output.
 
@@ -83,19 +145,15 @@ def decide_folder(
     )
     response = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
     content = _extract_content(response)
-    parsed = _parse_json(content)
-    if parsed is None:
-        return _heuristic_decision(filename, extracted_text)
-    folder = str(parsed.get("folder") or "Unsorted")
-    reasoning = str(parsed.get("reasoning") or "model decision")
-    confidence = float(parsed.get("confidence") or 0.4)
-    quarantine = bool(parsed.get("quarantine") or False)
-    return AgentDecision(
-        folder=_sanitize_folder(folder),
-        reasoning=reasoning,
-        confidence=max(0.0, min(1.0, confidence)),
-        quarantine=quarantine,
-    )
+    payload = _extract_json_str(content)
+    if payload is None:
+        raise AgentParseError(f"Agent response did not contain JSON: {content!r}")
+    try:
+        return AgentDecision.model_validate_json(payload)
+    except ValidationError as exc:
+        raise AgentParseError(
+            f"Agent response failed schema validation: {content!r}"
+        ) from exc
 
 
 def _extract_content(response: Any) -> str:
@@ -120,73 +178,28 @@ def _extract_content(response: Any) -> str:
     return str(response)
 
 
-def _parse_json(content: str) -> dict[str, Any] | None:
-    """Parse JSON content, including fenced or mixed outputs.
+def _extract_json_str(content: str) -> str | None:
+    """Extract JSON object string from raw model output.
 
     Args:
         content: Raw model output.
 
     Returns:
-        dict[str, Any] | None: Parsed JSON object when available.
+        str | None: JSON object string when available.
     """
     content = content.strip()
     if not content:
         return None
     try:
-        return json.loads(content)
+        json.loads(content)
+        return content
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", content, re.DOTALL)
         if not match:
             return None
         try:
-            return json.loads(match.group(0))
+            payload = match.group(0)
+            json.loads(payload)
+            return payload
         except json.JSONDecodeError:
             return None
-
-
-def _heuristic_decision(filename: str, extracted_text: str) -> AgentDecision:
-    """Return fallback folder decision from simple keyword matching.
-
-    Args:
-        filename: Source filename.
-        extracted_text: Extracted file text.
-
-    Returns:
-        AgentDecision: Heuristic routing decision.
-    """
-    corpus = f"{filename} {extracted_text}".lower()
-    pairs = [
-        ("invoice", "Finance/Invoices"),
-        ("receipt", "Finance/Receipts"),
-        ("tax", "Finance/Taxes"),
-        ("resume", "Career/Resumes"),
-        ("photo", "Media/Photos"),
-        ("screenshot", "Media/Screenshots"),
-        ("contract", "Legal/Contracts"),
-        ("code", "Code/Misc"),
-    ]
-    for token, folder in pairs:
-        if token in corpus:
-            return AgentDecision(
-                folder=folder, reasoning=f"matched {token}", confidence=0.65
-            )
-    return AgentDecision(
-        folder="Unsorted", reasoning="no strong signal", confidence=0.3
-    )
-
-
-def _sanitize_folder(folder: str) -> str:
-    """Normalize model folder output into safe path segments.
-
-    Args:
-        folder: Model-provided folder string.
-
-    Returns:
-        str: Sanitized folder path limited to four segments.
-    """
-    parts: list[str] = []
-    for raw in folder.split("/"):
-        clean = re.sub(r"[^a-zA-Z0-9 _.-]", "", raw).strip().strip(".")
-        if clean:
-            parts.append(clean)
-    return "/".join(parts[:4]) or "Unsorted"
