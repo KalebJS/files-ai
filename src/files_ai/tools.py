@@ -76,29 +76,49 @@ class OrganizerTools:
         return folder
 
     def move_file(
-        self, src: FileRef, folder: str, *, mime: str | None, extracted_chars: int
+        self,
+        src: FileRef,
+        folder: str,
+        *,
+        filename: str | None = None,
+        mime: str | None,
+        extracted_chars: int,
     ) -> MoveResult:
         """Move a file into a target organized folder.
 
         Args:
             src: Source file reference.
             folder: Destination folder relative path.
+            filename: Optional destination filename override.
             mime: MIME type when known.
             extracted_chars: Number of extracted text characters.
 
         Returns:
             MoveResult: Outcome of the move attempt.
         """
-        return self.move_ref(src, folder, mime=mime, extracted_chars=extracted_chars)
+        return self.move_ref(
+            src,
+            folder,
+            filename=filename,
+            mime=mime,
+            extracted_chars=extracted_chars,
+        )
 
     def move_ref(
-        self, src: FileRef, folder: str, *, mime: str | None, extracted_chars: int
+        self,
+        src: FileRef,
+        folder: str,
+        *,
+        filename: str | None = None,
+        mime: str | None,
+        extracted_chars: int,
     ) -> MoveResult:
         """Move a file or directory into a target organized folder.
 
         Args:
             src: Source reference.
             folder: Destination folder relative path.
+            filename: Optional destination filename override.
             mime: MIME type when known.
             extracted_chars: Number of extracted text characters.
 
@@ -114,6 +134,7 @@ class OrganizerTools:
             duplicate_folder=self.ctx.files.join(
                 self.ctx.quarantine_root, "duplicates"
             ),
+            filename=filename,
             mime=mime,
             extracted_chars=extracted_chars,
             dry_run=self.ctx.dry_run,

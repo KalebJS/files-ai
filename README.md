@@ -15,10 +15,8 @@ AI-powered file organizer service that watches a dropzone, extracts file content
   `DROPZONE`) and injected into agent prompts.
 - Johnny.Decimal destination enforcement with automatic area/category/ID
   allocation in `Area/Category/ID` shape.
-- Agent/reviewer tree context rendered as JSON object structures.
+- Agent tree context rendered as JSON object structures.
 - SQLite persistence for file metadata and routing decisions.
-- Post-batch refinement reviewer (Kimi K2.6 by default) that can suggest and
-  apply follow-up moves/folder creation after each batch.
 - Docker Compose deployment with host-mounted data.
 
 ## Project layout
@@ -80,8 +78,7 @@ Primary environment variables:
 - `BACKEND_OPTS__ROOT` (default `/data`)
 - `DROPZONE`, `ORGANIZED`, `QUARANTINE`
 - `OLLAMA_API_KEY`, `OLLAMA_BASE_URL`, `MODEL`
-- `BATCH_REVIEW_ENABLED`, `BATCH_REVIEW_MODEL`
-- `BATCH_REVIEW_QUIET_SECONDS`, `BATCH_REVIEW_MAX_ACTIONS`
+- `WATCH_QUIET_SECONDS`
 - `DRY_RUN`, `OCR_ENABLED`, `MAX_DEPTH`, `EXTRACT_MAX_BYTES`
 - `CONTEXT_MAX_BYTES`
 
@@ -93,7 +90,7 @@ See `docs/CONFIGURATION.md` for details.
   - `DROPZONE=/dropzone` -> `CONTEXT.md` read from `/CONTEXT.md`
   - `DROPZONE=/data/dropzone` -> `CONTEXT.md` read from `/data/CONTEXT.md`
 - This file is user-maintained and used as additional prompt context for
-  routing and post-batch review.
+  routing decisions.
 
 ## Johnny.Decimal routing shape
 

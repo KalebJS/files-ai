@@ -35,6 +35,7 @@ def move_into_folder(
     src: FileRef,
     folder: FileRef,
     duplicate_folder: FileRef | None = None,
+    filename: str | None = None,
     mime: str | None,
     extracted_chars: int,
     dry_run: bool = False,
@@ -47,6 +48,7 @@ def move_into_folder(
         src: Source file reference.
         folder: Destination folder reference.
         duplicate_folder: Destination folder for duplicate items.
+        filename: Optional destination filename override for non-duplicates.
         mime: MIME type when known.
         extracted_chars: Number of extracted text characters.
         dry_run: Whether to avoid filesystem writes.
@@ -54,7 +56,9 @@ def move_into_folder(
     Returns:
         MoveResult: Operation result metadata.
     """
-    filename = files.name_of(src)
+    src_filename = files.name_of(src)
+    selected_filename = filename.strip() if filename is not None else ""
+    target_filename = selected_filename or src_filename
     src_meta = files.stat(src)
     sha256 = _source_hash(files=files, src=src, is_dir=src_meta.is_dir)
     if store.has_hash(sha256):
@@ -71,7 +75,7 @@ def move_into_folder(
         destination = _next_available_destination(
             files=files,
             folder=duplicate_dst_folder,
-            name=filename,
+            name=src_filename,
         )
         if not dry_run:
             files.move(src, destination)
@@ -88,7 +92,9 @@ def move_into_folder(
         extracted_chars=extracted_chars,
     )
     files.make_dir(folder, parents=True, exist_ok=True)
-    destination = _next_available_destination(files=files, folder=folder, name=filename)
+    destination = _next_available_destination(
+        files=files, folder=folder, name=target_filename
+    )
     if not dry_run:
         files.move(src, destination)
         store.set_destination(file_id, destination.path)

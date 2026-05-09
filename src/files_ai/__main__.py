@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import signal
 from collections import deque
-from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 import structlog
@@ -14,7 +14,6 @@ from .agent import AgentDecision
 from .agent import AgentProtocol
 from .agent import build_agent
 from .agent import decide_folder
-from .batch_reviewer import run_batch_reviewer
 from .config import Settings
 from .config import get_settings
 from .context import load_user_context
@@ -34,15 +33,6 @@ from .tools import OrganizerTools
 from .tools import ToolContext
 from .tree import build_tree_snapshot
 from .watcher import StableFileWatcher
-
-
-@dataclass
-class BatchContext:
-    """Context collected while processing one batch."""
-
-    source_paths: list[str]
-    moved_destinations: set[str]
-    new_folders: set[str]
 
 
 def main() -> None:
@@ -110,7 +100,7 @@ def main() -> None:
             return
         for refs in watcher.iter_stable_event_batches(
             dropzone,
-            quiet_seconds=settings.batch_review_quiet_seconds,
+            quiet_seconds=settings.watch_quiet_seconds,
             include_directories=True,
         ):
             if stopped:
@@ -141,7 +131,6 @@ def _process_ref(
     folder_agent: FolderAgent,
     watcher: StableFileWatcher,
     batch_id: int | None = None,
-    batch_ctx: BatchContext | None = None,
     user_context: str = "",
 ) -> None:
     """Process a file or directory reference."""
@@ -152,8 +141,6 @@ def _process_ref(
     except NotFound:
         return
     if meta.is_dir:
-        if batch_ctx is not None:
-            batch_ctx.source_paths.append(_dropzone_relative_path(ref, dropzone))
         _process_directory(
             ref=ref,
             dropzone=dropzone,
@@ -163,13 +150,10 @@ def _process_ref(
             folder_agent=folder_agent,
             watcher=watcher,
             batch_id=batch_id,
-            batch_ctx=batch_ctx,
             user_context=user_context,
         )
         return
     if watcher.is_stable(ref):
-        if batch_ctx is not None:
-            batch_ctx.source_paths.append(_dropzone_relative_path(ref, dropzone))
         _process_file(
             ref,
             dropzone=dropzone,
@@ -177,7 +161,6 @@ def _process_ref(
             tools=tools,
             agent=file_agent,
             batch_id=batch_id,
-            batch_ctx=batch_ctx,
             user_context=user_context,
         )
 
@@ -193,20 +176,9 @@ def _process_batch(
     folder_agent: FolderAgent,
     watcher: StableFileWatcher,
 ) -> None:
-    """Process a batch of refs, then run post-batch review if enabled."""
+    """Process a batch of refs and persist batch summary."""
     if not refs:
         return
-    log = structlog.get_logger("files_ai.batch").bind(mode=mode, count=len(refs))
-    pre_tree = set(
-        build_tree_snapshot(
-            tools.ctx.files,
-            tools.ctx.organized_root,
-            max_depth=settings.max_depth,
-        )
-    )
-    batch_ctx = BatchContext(
-        source_paths=[], moved_destinations=set(), new_folders=set()
-    )
     user_context = load_user_context(
         files=tools.ctx.files,
         dropzone=dropzone,
@@ -223,61 +195,13 @@ def _process_batch(
             folder_agent=folder_agent,
             watcher=watcher,
             batch_id=batch_id,
-            batch_ctx=batch_ctx,
             user_context=user_context,
         )
-    post_tree = set(
-        build_tree_snapshot(
-            tools.ctx.files,
-            tools.ctx.organized_root,
-            max_depth=settings.max_depth,
-        )
+    tools.ctx.store.finish_batch(
+        batch_id,
+        status="completed",
+        summary="Batch processing completed.",
     )
-    for rel in sorted(post_tree - pre_tree):
-        batch_ctx.new_folders.add(
-            tools.ctx.files.join(tools.ctx.organized_root, rel).path
-        )
-    summary = "Post-batch review disabled."
-    status = "completed"
-    try:
-        if settings.batch_review_enabled:
-            review = run_batch_reviewer(
-                files=tools.ctx.files,
-                store=tools.ctx.store,
-                settings=settings,
-                organized_root=tools.ctx.organized_root,
-                dropzone_root=dropzone,
-                batch_id=batch_id,
-                batch_source_paths=batch_ctx.source_paths,
-                new_file_paths=batch_ctx.moved_destinations,
-                new_folder_paths=batch_ctx.new_folders,
-                user_context=user_context,
-            )
-            for retry_ref in review.retry_refs:
-                _process_ref(
-                    _with_dropzone_metadata(retry_ref, dropzone),
-                    dropzone=dropzone,
-                    settings=settings,
-                    tools=tools,
-                    file_agent=file_agent,
-                    folder_agent=folder_agent,
-                    watcher=watcher,
-                    batch_id=batch_id,
-                    batch_ctx=batch_ctx,
-                    user_context=user_context,
-                )
-            summary = review.summary
-            log.info(
-                "batch_reviewed",
-                actions=review.action_count,
-                retries=len(review.retry_refs),
-            )
-        tools.ctx.store.finish_batch(batch_id, status=status, summary=summary)
-    except Exception as exc:  # noqa: BLE001
-        status = "failed"
-        summary = f"Post-batch review failed: {exc}"
-        tools.ctx.store.finish_batch(batch_id, status=status, summary=summary)
-        log.warning("batch_review_failed", error=str(exc))
 
 
 def _process_file(
@@ -288,7 +212,6 @@ def _process_file(
     tools: OrganizerTools,
     agent: AgentProtocol,
     batch_id: int | None = None,
-    batch_ctx: BatchContext | None = None,
     user_context: str = "",
 ) -> None:
     """Process one file end-to-end and persist decision metadata.
@@ -300,13 +223,13 @@ def _process_file(
         tools: Organizer tool facade.
         agent: Routing agent with an `invoke` interface.
         batch_id: Optional batch id used for move-history tracking.
-        batch_ctx: Optional in-memory batch context accumulator.
         user_context: User-maintained context included in agent prompts.
     """
     log = structlog.get_logger("files_ai.processor").bind(
         path=ref.path,
         source_rel_dir=ref.extra.get("dropzone_relative_dir", ""),
     )
+    original_filename = tools.ctx.files.name_of(ref)
     try:
         if tools.ctx.files.stat(ref).is_dir:
             log.info("skipped_directory")
@@ -335,8 +258,20 @@ def _process_file(
         ref=ref,
         decision=decision,
         tools=tools,
+        target_filename=decision.filename,
         mime=extraction.mime,
         extracted_chars=len(extraction.text),
+    )
+    final_filename = (
+        PurePosixPath(result.destination.path).name
+        if result.destination is not None
+        else None
+    )
+    rename_requested = decision.filename is not None
+    renamed = (
+        final_filename is not None
+        and final_filename != original_filename
+        and not result.duplicate
     )
     if result.destination is not None and not result.dry_run:
         _prune_dropzone_ancestors(
@@ -344,8 +279,6 @@ def _process_file(
             ref=ref,
             dropzone=dropzone,
         )
-    if batch_ctx is not None and result.destination is not None:
-        batch_ctx.moved_destinations.add(result.destination.path)
     if result.file_id is not None:
         tools.ctx.store.add_decision(
             result.file_id,
@@ -367,6 +300,16 @@ def _process_file(
             else None,
             reason=decision.reasoning,
             model=settings.model,
+            metadata=json.dumps(
+                {
+                    "original_filename": original_filename,
+                    "requested_filename": decision.filename,
+                    "final_filename": final_filename,
+                    "rename_requested": rename_requested,
+                    "renamed": renamed,
+                },
+                ensure_ascii=False,
+            ),
         )
     log.info(
         "processed",
@@ -375,6 +318,9 @@ def _process_file(
         dry_run=result.dry_run,
         tier=extraction.tier,
         confidence=decision.confidence,
+        rename_requested=rename_requested,
+        renamed=renamed,
+        filename=final_filename,
     )
 
 
@@ -388,7 +334,6 @@ def _process_directory(
     folder_agent: FolderAgent,
     watcher: StableFileWatcher,
     batch_id: int | None = None,
-    batch_ctx: BatchContext | None = None,
     user_context: str = "",
 ) -> None:
     """Process one directory by either moving it or recursing children."""
@@ -423,7 +368,6 @@ def _process_directory(
             folder_agent=folder_agent,
             watcher=watcher,
             batch_id=batch_id,
-            batch_ctx=batch_ctx,
             user_context=user_context,
         )
         if not tools.ctx.dry_run:
@@ -447,8 +391,6 @@ def _process_directory(
             ),
             model=settings.model,
         )
-    if batch_ctx is not None and result.destination is not None:
-        batch_ctx.moved_destinations.add(result.destination.path)
     if batch_id is not None:
         action = "quarantine_folder" if decision.quarantine else "move_folder"
         if result.duplicate:
@@ -485,7 +427,6 @@ def _recurse_directory(
     folder_agent: FolderAgent,
     watcher: StableFileWatcher,
     batch_id: int | None = None,
-    batch_ctx: BatchContext | None = None,
     user_context: str = "",
 ) -> None:
     """Recursively process a directory's children with folder decisions."""
@@ -507,7 +448,6 @@ def _recurse_directory(
                     tools=tools,
                     agent=file_agent,
                     batch_id=batch_id,
-                    batch_ctx=batch_ctx,
                     user_context=user_context,
                 )
             continue
@@ -545,8 +485,6 @@ def _recurse_directory(
                 ),
                 model=settings.model,
             )
-        if batch_ctx is not None and result.destination is not None:
-            batch_ctx.moved_destinations.add(result.destination.path)
         if batch_id is not None:
             action = "quarantine_folder" if decision.quarantine else "move_folder"
             if result.duplicate:
@@ -607,20 +545,12 @@ def _with_dropzone_metadata(ref: FileRef, dropzone: FileRef) -> FileRef:
     return FileRef(backend=ref.backend, path=ref.path, id=ref.id, extra=extra)
 
 
-def _dropzone_relative_path(ref: FileRef, dropzone: FileRef) -> str:
-    """Return dropzone-relative path for batch context serialization."""
-    try:
-        rel = PurePosixPath(ref.path).relative_to(PurePosixPath(dropzone.path))
-        return rel.as_posix()
-    except ValueError:
-        return PurePosixPath(ref.path).name
-
-
 def _apply_decision(
     *,
     ref: FileRef,
     decision: AgentDecision,
     tools: OrganizerTools,
+    target_filename: str | None,
     mime: str | None,
     extracted_chars: int,
 ):
@@ -630,6 +560,7 @@ def _apply_decision(
         ref: Source file reference.
         decision: Routing decision from the agent.
         tools: Organizer tool facade.
+        target_filename: Optional filename override proposed by the file agent.
         mime: MIME type when known.
         extracted_chars: Number of extracted text characters.
 
@@ -643,7 +574,13 @@ def _apply_decision(
         root=tools.ctx.organized_root,
         folder=decision.folder,
     )
-    return tools.move_file(ref, normalized, mime=mime, extracted_chars=extracted_chars)
+    return tools.move_file(
+        ref,
+        normalized,
+        filename=target_filename,
+        mime=mime,
+        extracted_chars=extracted_chars,
+    )
 
 
 def _apply_folder_decision(

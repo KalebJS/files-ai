@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import PurePosixPath
 from typing import Any
 from typing import Protocol
 
@@ -24,6 +25,7 @@ Return JSON only with keys:
 - folder: target folder under organized root
 - confidence: number in [0,1]
 - quarantine: boolean
+- filename: optional improved filename for the file (string or null)
 
 Hard rules:
 1) Keep folder depth <= 4 and use safe names.
@@ -34,6 +36,9 @@ Hard rules:
 4) If no existing folder fits, create a concise new folder path based on content.
 5) "Unsorted" is a last-resort failure bucket and should almost never be chosen.
 6) Only set quarantine=true for unsafe, suspicious, or policy-sensitive content.
+7) Filename rename is optional but should be used when it clearly improves
+   descriptiveness or consistency with peer files in the same ID folder.
+8) Never rename directories; filename applies to files only.
 
 Folder strategy:
 - First classify by strongest evidence from filename, source_relative_dir, and text.
@@ -45,6 +50,15 @@ Folder strategy:
   - Media/Photos
   - Finance/Statements
 
+Filename strategy:
+- Prefer concise, human-readable names with specific meaning.
+- Match peer naming style in the target ID folder when clear.
+- Preserve extension unless the source has none.
+- Avoid opaque names like scan/document/img/hash-like labels when better content
+  evidence exists.
+- Use safe characters only: letters, numbers, spaces, hyphens, underscores,
+  dots, and parentheses.
+
 Examples:
 Input:
 filename=invoice_2026_april.pdf
@@ -53,7 +67,7 @@ tree=['Finance/Invoices', 'Finance/Receipts', 'Legal/Contracts']
 text=Invoice #1042 due on 2026-05-15 for consulting services.
 Output:
 {"reasoning":"invoice terms and due date","folder":"Finance/Invoices",
-"confidence":0.93,"quarantine":false}
+"confidence":0.93,"quarantine":false,"filename":"2026-04 Invoice #1042.pdf"}
 
 Input:
 filename=Lab8.cpp
@@ -62,7 +76,7 @@ tree=['Unsorted']
 text=C++ assignment implementing data structures and traversal.
 Output:
 {"reasoning":"coursework source code signals C++ category","folder":"Code/C++",
-"confidence":0.88,"quarantine":false}
+"confidence":0.88,"quarantine":false,"filename":"Lab 8 - Data Structures.cpp"}
 
 Input:
 filename=Working_with_Real_Estate_Agents_Disclosure.pdf
@@ -71,7 +85,7 @@ tree=['Unsorted', 'Legal']
 text=Buyer disclosure and agency agreement terms.
 Output:
 {"reasoning":"real-estate legal document","folder":"Legal/Housing",
-"confidence":0.9,"quarantine":false}
+"confidence":0.9,"quarantine":false,"filename":null}
 """
 
 
@@ -102,6 +116,7 @@ class AgentDecision(BaseModel):
     reasoning: str
     confidence: float
     quarantine: bool = False
+    filename: str | None = None
 
     @field_validator("folder")
     @classmethod
@@ -119,6 +134,17 @@ class AgentDecision(BaseModel):
     def _clamp_confidence(cls, confidence: float) -> float:
         """Clamp confidence to a valid probability interval."""
         return max(0.0, min(1.0, confidence))
+
+    @field_validator("filename")
+    @classmethod
+    def _sanitize_filename(cls, filename: str | None) -> str | None:
+        """Normalize model filename output into a safe basename."""
+        if filename is None:
+            return None
+        basename = PurePosixPath(filename.replace("\\", "/")).name
+        clean = re.sub(r"[^a-zA-Z0-9 _.\-()]", "", basename).strip().strip(".")
+        clean = re.sub(r"\s+", " ", clean)
+        return clean or None
 
 
 def build_agent(settings: Settings) -> AgentProtocol:
@@ -231,6 +257,12 @@ def _build_prompt(
         "- Reuse an existing folder only when strongly correct.\n"
         "- If none fit, create a concise new folder path.\n"
         "- Avoid `Unsorted` except as a true last resort.\n\n"
+        "## Filename policy\n"
+        "- `filename` is optional, but should be provided when it clearly improves\n"
+        "  descriptiveness or consistency with peer files in the target ID folder.\n"
+        "- Keep the original extension unless the source has no extension.\n"
+        "- Use safe filename characters only.\n"
+        "- If filename is already good, return `filename: null`.\n\n"
         "## File metadata\n"
         f"- **filename**: `{filename}`\n"
         f"- **source_relative_dir**: `{source_relative_dir}`\n"

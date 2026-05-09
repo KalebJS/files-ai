@@ -33,19 +33,9 @@ This document describes runtime configuration for `files-ai`.
 - `MODEL`  
   Chat model name, default `gpt-oss:120b-cloud`.
 
-- `BATCH_REVIEW_ENABLED` (`true`/`false`)  
-  Enables post-batch refinement review after batch processing completes
-  (default `true`).
-
-- `BATCH_REVIEW_MODEL`  
-  Reviewer model name, default `kimi-k2.6`.
-
-- `BATCH_REVIEW_QUIET_SECONDS`  
+- `WATCH_QUIET_SECONDS`  
   In watch mode, minimum quiet window with no new stable events before a
-  batch is considered complete and reviewed.
-
-- `BATCH_REVIEW_MAX_ACTIONS`  
-  Maximum number of reviewer tool actions allowed per batch.
+  batch is considered complete and processed.
 
 - `CONTEXT_MAX_BYTES`  
   Maximum bytes read from adjacent `CONTEXT.md` and inserted into agent prompts
@@ -71,7 +61,7 @@ This document describes runtime configuration for `files-ai`.
 ## Context file behavior
 
 - files-ai looks for a user-maintained `CONTEXT.md` adjacent to `DROPZONE` and
-  includes its content in file-routing, folder-routing, and reviewer prompts.
+  includes its content in file-routing and folder-routing prompts.
 - Example path resolution:
   - `DROPZONE=/dropzone` -> context at `/CONTEXT.md`
   - `DROPZONE=/data/dropzone` -> context at `/data/CONTEXT.md`
@@ -103,24 +93,6 @@ This document describes runtime configuration for `files-ai`.
   - `10-19 Life Admin/13 Money/13.02 W-2s`
 - If an agent output is partial or non-conforming, files-ai validates/repairs
   the path and allocates the next available area/category/ID when needed.
-
-## Post-batch reviewer behavior
-
-- After a batch completes, reviewer input includes:
-  - upload batch tree (JSON object format),
-  - full updated destination tree (JSON object format) tagged with newly
-    inserted files/folders,
-  - user context (from adjacent `CONTEXT.md`),
-  - move history for that batch.
-
-- Reviewer tools:
-  - read move history,
-  - create folder (Johnny.Decimal-normalized),
-  - retry item (move back to dropzone),
-  - move item to existing folder (Johnny.Decimal-normalized).
-
-- Reviewer tool actions are tracked in SQLite move history and included in
-  batch summaries.
 
 ## Docker notes
 

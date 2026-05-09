@@ -153,3 +153,60 @@ def test_move_directory_hash_distinguishes_tree_layout(tmp_path: Path) -> None:
         assert files.exists(second.destination)
     finally:
         db.close()
+
+
+def test_move_into_folder_uses_filename_override(tmp_path: Path) -> None:
+    """Move a file using provided filename override."""
+    files = LocalFiles(tmp_path)
+    drop = FileRef("local", "/dropzone")
+    org = FileRef("local", "/organized/Receipts")
+    files.make_dir(drop)
+    files.make_dir(org)
+    db = Store(tmp_path / "state.db")
+    try:
+        ref = files.join(drop, "scan.pdf")
+        (tmp_path / "dropzone" / "scan.pdf").write_text("content", encoding="utf-8")
+        moved = move_into_folder(
+            files=files,
+            store=db,
+            src=ref,
+            folder=org,
+            filename="2026-05 Receipt.pdf",
+            mime="application/pdf",
+            extracted_chars=7,
+        )
+        assert moved.destination is not None
+        assert moved.destination.path == "/organized/Receipts/2026-05 Receipt.pdf"
+        assert files.exists(moved.destination)
+        assert not files.exists(ref)
+    finally:
+        db.close()
+
+
+def test_move_into_folder_filename_override_conflict_suffix(tmp_path: Path) -> None:
+    """Apply numeric suffix when override collides with existing filename."""
+    files = LocalFiles(tmp_path)
+    drop = FileRef("local", "/dropzone")
+    org = FileRef("local", "/organized/Receipts")
+    files.make_dir(drop)
+    files.make_dir(org)
+    db = Store(tmp_path / "state.db")
+    try:
+        existing = files.join(org, "2026-05 Receipt.pdf")
+        files.write_bytes(existing, b"existing")
+        ref = files.join(drop, "scan.pdf")
+        (tmp_path / "dropzone" / "scan.pdf").write_text("content", encoding="utf-8")
+        moved = move_into_folder(
+            files=files,
+            store=db,
+            src=ref,
+            folder=org,
+            filename="2026-05 Receipt.pdf",
+            mime="application/pdf",
+            extracted_chars=7,
+        )
+        assert moved.destination is not None
+        assert moved.destination.path == "/organized/Receipts/2026-05 Receipt-1.pdf"
+        assert files.exists(moved.destination)
+    finally:
+        db.close()

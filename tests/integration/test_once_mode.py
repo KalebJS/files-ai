@@ -47,7 +47,6 @@ def test_once_mode_processes_dropzone_file(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("STATE_DB", str(state_db))
     monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setenv("MODEL", "test-model")
-    monkeypatch.setenv("BATCH_REVIEW_ENABLED", "false")
     monkeypatch.setattr("sys.argv", ["files-ai", "--once"])
     monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
     monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
@@ -118,7 +117,6 @@ def test_once_mode_moves_project_folder_as_unit(monkeypatch, tmp_path: Path) -> 
     monkeypatch.setenv("STATE_DB", str(state_db))
     monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setenv("MODEL", "test-model")
-    monkeypatch.setenv("BATCH_REVIEW_ENABLED", "false")
     monkeypatch.setattr("sys.argv", ["files-ai", "--once"])
     monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
     monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
@@ -182,7 +180,6 @@ def test_once_mode_recurses_independent_folder(monkeypatch, tmp_path: Path) -> N
     monkeypatch.setenv("STATE_DB", str(state_db))
     monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setenv("MODEL", "test-model")
-    monkeypatch.setenv("BATCH_REVIEW_ENABLED", "false")
     monkeypatch.setattr("sys.argv", ["files-ai", "--once"])
     monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
     monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
@@ -259,7 +256,6 @@ def test_once_mode_moves_duplicates_to_quarantine(monkeypatch, tmp_path: Path) -
     monkeypatch.setenv("STATE_DB", str(state_db))
     monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setenv("MODEL", "test-model")
-    monkeypatch.setenv("BATCH_REVIEW_ENABLED", "false")
     monkeypatch.setattr("sys.argv", ["files-ai", "--once"])
     monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
     monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
@@ -294,3 +290,67 @@ def test_once_mode_moves_duplicates_to_quarantine(monkeypatch, tmp_path: Path) -
     assert duplicate_target.exists()
     assert not source.exists()
     assert not any((tmp_path / "dropzone").iterdir())
+
+
+def test_once_mode_renames_file_when_agent_suggests(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Rename a file while routing when agent returns optional filename."""
+    dropzone = tmp_path / "dropzone"
+    organized = tmp_path / "organized"
+    quarantine = tmp_path / "quarantine"
+    dropzone.mkdir(parents=True)
+    organized.mkdir(parents=True)
+    quarantine.mkdir(parents=True)
+    source = dropzone / "scan.pdf"
+    source.write_text("Invoice #1042 due", encoding="utf-8")
+    state_db = tmp_path / "state.db"
+
+    monkeypatch.setenv("BACKEND", "local")
+    monkeypatch.setenv("BACKEND_OPTS__ROOT", str(tmp_path))
+    monkeypatch.setenv("DROPZONE", "/dropzone")
+    monkeypatch.setenv("ORGANIZED", "/organized")
+    monkeypatch.setenv("QUARANTINE", "/quarantine")
+    monkeypatch.setenv("STATE_DB", str(state_db))
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("MODEL", "test-model")
+    monkeypatch.setattr("sys.argv", ["files-ai", "--once"])
+    monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
+    monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
+    monkeypatch.setattr(
+        app,
+        "decide_folder",
+        lambda *_args, **_kwargs: AgentDecision(
+            folder="Finance/Invoices",
+            reasoning="rename integration route",
+            confidence=1.0,
+            filename="2026-05 Invoice 1042.pdf",
+        ),
+    )
+    monkeypatch.setattr(
+        app,
+        "decide_folder_action",
+        lambda *_args, **_kwargs: FolderDecision(
+            action="recurse",
+            folder="Unsorted",
+            reasoning="integration recurse",
+            confidence=1.0,
+        ),
+    )
+    monkeypatch.setattr(app.StableFileWatcher, "is_stable", lambda *_: True)
+
+    get_settings.cache_clear()
+    try:
+        app.main()
+    finally:
+        get_settings.cache_clear()
+
+    target = (
+        organized
+        / "10-19 Finance"
+        / "10 Invoices"
+        / "10.01 Invoices"
+        / "2026-05 Invoice 1042.pdf"
+    )
+    assert target.exists()
+    assert not source.exists()

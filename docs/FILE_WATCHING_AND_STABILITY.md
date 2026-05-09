@@ -78,8 +78,8 @@ thread and groups stable refs into batches.
   item.
 - If that timeout expires, the batch is yielded.
 
-`quiet_seconds` comes from `BATCH_REVIEW_QUIET_SECONDS` and defines the "batch
-is done" quiet window.
+`quiet_seconds` comes from `WATCH_QUIET_SECONDS` and defines the "batch is
+done" quiet window.
 
 Before yielding, refs are deduped by path (`_dedupe_refs`) while preserving the
 first-seen order and keeping the latest ref object per path.

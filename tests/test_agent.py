@@ -165,6 +165,65 @@ def test_decide_folder_sends_trace_metadata() -> None:
     }
 
 
+def test_decide_folder_parses_optional_filename() -> None:
+    """Parse optional filename output from model response."""
+    agent = DummyAgent(
+        (
+            '{"folder":"Finance/Invoices","reasoning":"invoice keywords",'
+            '"confidence":0.9,"quarantine":false,'
+            '"filename":"2026-04 Invoice #1042.pdf"}'
+        )
+    )
+    decision = decide_folder(
+        agent,
+        filename="invoice.txt",
+        extracted_text="invoice balance due",
+        tree_snapshot=[],
+    )
+    assert decision.filename == "2026-04 Invoice 1042.pdf"
+
+
+def test_decide_folder_sanitizes_optional_filename() -> None:
+    """Strip unsafe/path characters and normalize basename-only filename."""
+    agent = DummyAgent(
+        (
+            '{"folder":"Finance/Invoices","reasoning":"invoice keywords",'
+            '"confidence":0.9,"quarantine":false,'
+            '"filename":"nested\\\\..\\\\scan<>?.pdf"}'
+        )
+    )
+    decision = decide_folder(
+        agent,
+        filename="scan.pdf",
+        extracted_text="invoice balance due",
+        tree_snapshot=[],
+    )
+    assert decision.filename == "scan.pdf"
+
+
+def test_decide_folder_prompt_includes_filename_policy() -> None:
+    """Include explicit rename policy guidance in the routing prompt."""
+    agent = DummyAgent(
+        (
+            '{"folder":"Code/C++","reasoning":"source dir and extension",'
+            '"confidence":0.9,"quarantine":false,"filename":null}'
+        )
+    )
+    decide_folder(
+        agent,
+        filename="Lab8.cpp",
+        extracted_text="data structure assignment",
+        tree_snapshot=["10-19 Code/10 Projects/10.01 Projects/main.py"],
+        source_relative_dir="Security",
+    )
+    assert agent.last_request is not None
+    messages = agent.last_request.get("messages")
+    assert isinstance(messages, list)
+    content = messages[0]["content"]
+    assert "## Filename policy" in content
+    assert "filename is already good" in content.lower()
+
+
 def test_build_agent_configures_langsmith(monkeypatch: pytest.MonkeyPatch) -> None:
     """Set tracing env vars from runtime settings when tracing is enabled."""
     monkeypatch.setenv("LANGSMITH_TRACING", "false")
