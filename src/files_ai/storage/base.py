@@ -153,6 +153,20 @@ class Files(Protocol):
             bytes: File payload bytes.
         """
 
+    def write_bytes(
+        self, ref: FileRef, payload: bytes, *, overwrite: bool = True
+    ) -> FileRef:
+        """Write bytes to a reference.
+
+        Args:
+            ref: File reference to write.
+            payload: Bytes payload to write.
+            overwrite: Whether to overwrite an existing file.
+
+        Returns:
+            FileRef: Written file reference.
+        """
+
     def hash(self, ref: FileRef, algo: str = "sha256") -> str:
         """Compute a hash for a file reference.
 

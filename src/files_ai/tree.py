@@ -29,6 +29,19 @@ def build_tree_snapshot(files: Files, root: FileRef, max_depth: int = 4) -> list
     return sorted(snapshot)
 
 
+def build_folder_snapshot_tree(paths: list[str]) -> str:
+    """Build a JSON tree object from folder paths only."""
+    cleaned: list[str] = []
+    for raw in paths:
+        rel = raw.strip().strip("/")
+        if rel:
+            cleaned.append(rel)
+    if not cleaned:
+        return "{}"
+    tree = _render_tree_object([], folder_paths=sorted(set(cleaned)))
+    return json.dumps(tree, ensure_ascii=False, indent=2)
+
+
 def build_upload_batch_tree(paths: list[str]) -> str:
     """Build a JSON upload-tree from dropzone-relative paths."""
     cleaned: list[str] = []

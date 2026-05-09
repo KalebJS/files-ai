@@ -6,6 +6,9 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
+from files_ai.storage import Conflict
 from files_ai.storage import FileRef
 from files_ai.storage import LocalFiles
 
@@ -89,3 +92,12 @@ def test_watch_created_event(tmp_path: Path) -> None:
         assert got_created
     finally:
         files.stop_watch()
+
+
+def test_write_bytes_respects_overwrite_flag(tmp_path: Path) -> None:
+    """Reject writes when destination exists and overwrite is disabled."""
+    files = LocalFiles(tmp_path)
+    ref = FileRef("local", "/dropzone/a.txt")
+    files.write_bytes(ref, b"hello")
+    with pytest.raises(Conflict):
+        files.write_bytes(ref, b"world", overwrite=False)

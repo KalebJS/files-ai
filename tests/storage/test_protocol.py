@@ -24,6 +24,8 @@ def test_protocol_conformance_surface(tmp_path: Path) -> None:
     assert files.name_of(child) == "a.txt"
     assert files.parent(child).path == "/dropzone"
     assert files.read_bytes(child, limit=2) == b"ab"
+    files.write_bytes(child, b"xyz")
+    assert files.read_bytes(child) == b"xyz"
     assert files.stat(child).size == 3
     assert list(files.walk(root))
     assert list(files.iterdir(root))

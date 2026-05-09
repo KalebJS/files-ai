@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from pydantic import field_validator
 
 from .config import Settings
+from .tree import build_folder_snapshot_tree
 
 SYSTEM_PROMPT = """You are an AI file organizer for a personal/work archive.
 Return JSON only with keys:
@@ -217,23 +218,35 @@ def _build_prompt(
     source_relative_dir: str,
     user_context: str,
 ) -> str:
-    """Build a routing prompt with stronger anti-Unsorted guidance."""
+    """Build a structured markdown routing prompt for file decisions."""
     filtered_tree = [folder for folder in tree_snapshot if folder != "Unsorted"]
     unsorted_present = len(filtered_tree) != len(tree_snapshot)
+    tree_block = build_folder_snapshot_tree(filtered_tree)
     return (
-        "Choose folder for file.\n"
-        "Decision policy:\n"
-        "- Output Johnny.Decimal Area/Category/ID destination.\n"
+        "# Task\n"
+        "Choose a Johnny.Decimal destination folder for this file.\n\n"
+        "## Decision policy\n"
+        "- Output Johnny.Decimal `Area/Category/ID` destination.\n"
         "- Favor specific semantic categories.\n"
         "- Reuse an existing folder only when strongly correct.\n"
-        "- If none fit, create a new concise folder path.\n"
-        "- Avoid Unsorted except as a true last resort.\n"
-        f"filename={filename}\n"
-        f"source_relative_dir={source_relative_dir}\n"
-        f"tree={filtered_tree}\n"
-        f"unsorted_present={unsorted_present}\n"
-        f"user_context={user_context[:4000]}\n"
-        f"text={extracted_text[:4000]}"
+        "- If none fit, create a concise new folder path.\n"
+        "- Avoid `Unsorted` except as a true last resort.\n\n"
+        "## File metadata\n"
+        f"- **filename**: `{filename}`\n"
+        f"- **source_relative_dir**: `{source_relative_dir}`\n"
+        f"- **unsorted_present**: `{unsorted_present}`\n\n"
+        "## Existing tree\n"
+        "```json\n"
+        f"{tree_block}\n"
+        "```\n\n"
+        "## User context\n"
+        "```markdown\n"
+        f"{user_context[:4000]}\n"
+        "```\n\n"
+        "## Extracted text\n"
+        "```text\n"
+        f"{extracted_text[:4000]}\n"
+        "```"
     )
 
 

@@ -126,11 +126,18 @@ def test_decide_folder_prompt_discourages_unsorted() -> None:
     messages = agent.last_request.get("messages")
     assert isinstance(messages, list)
     content = messages[0]["content"]
-    assert "source_relative_dir=Security" in content
-    assert "tree=['Finance/Invoices']" in content
-    assert "unsorted_present=True" in content
-    assert "Avoid Unsorted except as a true last resort." in content
-    assert "user_context=You manage files for Acme Finance." in content
+    assert "# Task" in content
+    assert "## File metadata" in content
+    assert "**source_relative_dir**: `Security`" in content
+    assert "**unsorted_present**: `True`" in content
+    assert "## Existing tree" in content
+    assert '"Finance"' in content
+    assert '"Invoices"' in content
+    assert "## User context" in content
+    assert "```markdown" in content
+    assert "You manage files for Acme Finance." in content
+    assert "## Extracted text" in content
+    assert "```text" in content
 
 
 def test_decide_folder_sends_trace_metadata() -> None:

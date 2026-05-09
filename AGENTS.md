@@ -4,6 +4,8 @@
 - Core application code lives in `src/files_ai/`.
   - `storage/` contains the `Files` protocol and backend implementations (currently `LocalFiles`).
   - `__main__.py` is the service entrypoint (`python -m files_ai`).
+  - `context.py` loads user-maintained `CONTEXT.md` adjacent to `DROPZONE`.
+  - `johnny_decimal.py` enforces/allocates Johnny.Decimal `Area/Category/ID` paths.
   - Other modules handle extraction, routing, moving, persistence, and watcher behavior.
 - Tests are in `tests/` with storage-focused tests under `tests/storage/`.
 - Runtime/deploy files are at repo root: `compose.yaml`, `Dockerfile`, `.env.example`.
@@ -42,4 +44,6 @@
 ## Security & Configuration Tips
 - Never commit secrets; keep API keys in local `.env`.
 - Validate file operations through the `Files` abstraction instead of direct ad-hoc path handling.
+- Keep `CONTEXT.md` user-maintained and free of secrets; it is injected into agent prompts.
+- Keep destination routing Johnny.Decimal-compliant (`Area/Category/ID`).
 - Run `bandit` via pre-commit before pushing security-sensitive changes.

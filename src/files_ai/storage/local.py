@@ -229,6 +229,29 @@ class LocalFiles:
         with self.open(ref) as file_obj:
             return file_obj.read() if limit is None else file_obj.read(limit)
 
+    def write_bytes(
+        self, ref: FileRef, payload: bytes, *, overwrite: bool = True
+    ) -> FileRef:
+        """Write bytes to a file under backend root.
+
+        Args:
+            ref: Destination file reference.
+            payload: Bytes payload to write.
+            overwrite: Whether to overwrite when destination already exists.
+
+        Returns:
+            FileRef: Written file reference.
+
+        Raises:
+            Conflict: If destination exists and overwrite is disabled.
+        """
+        target = self._to_abs_path(ref)
+        if target.exists() and not overwrite:
+            raise Conflict(ref.path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+        return ref
+
     def hash(self, ref: FileRef, algo: str = "sha256") -> str:
         """Compute content hash for a file.
 

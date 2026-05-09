@@ -157,6 +157,61 @@ def test_folder_prompt_enforces_dependency_not_theme() -> None:
     assert '"action":"recurse"' in FOLDER_SYSTEM_PROMPT
 
 
+def test_decide_folder_action_builds_structured_markdown_prompt(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Send structured markdown sections in folder decision prompt."""
+    files = LocalFiles(tmp_path)
+    root = FileRef("local", "/dropzone/mixed")
+    files.make_dir(root)
+    (tmp_path / "dropzone" / "mixed" / "notes.txt").write_text("n", encoding="utf-8")
+
+    class _RuntimeAgent:
+        def __init__(self) -> None:
+            self.last_request: dict[str, object] | None = None
+
+        def invoke(self, request: object, **_: object) -> dict[str, object]:
+            if isinstance(request, dict):
+                self.last_request = request
+            return {
+                "output": (
+                    '{"action":"recurse","reasoning":"independent docs",'
+                    '"folder":"Unsorted","confidence":0.9,"quarantine":false}'
+                )
+            }
+
+    runtime = _RuntimeAgent()
+    monkeypatch.setattr("files_ai.folder_agent.create_agent", lambda **_: runtime)
+    monkeypatch.setattr("files_ai.folder_agent._heuristic_decision", lambda **_: None)
+
+    class _TestAgent:
+        llm = object()
+
+    decide_folder_action(
+        _TestAgent(),  # type: ignore[arg-type]
+        files=files,
+        folder_ref=root,
+        tree_snapshot=["10-19 Finance/10 Taxes/10.01 Taxes"],
+        source_relative_dir="School",
+        user_context="This archive belongs to Acme.",
+    )
+
+    assert runtime.last_request is not None
+    messages = runtime.last_request["messages"]
+    assert isinstance(messages, list)
+    content = messages[0]["content"]
+    assert "# Task" in content
+    assert "## Folder metadata" in content
+    assert "**folder_name**: `mixed`" in content
+    assert "## Existing tree" in content
+    assert '"10-19 Finance"' in content
+    assert '"10 Taxes"' in content
+    assert '"10.01 Taxes"' in content
+    assert "## User context" in content
+    assert "```markdown" in content
+    assert "This archive belongs to Acme." in content
+
+
 def test_list_children_renders_tree_for_nested_structure(tmp_path: Path) -> None:
     """Render nested folders in tree-style output."""
     files = LocalFiles(tmp_path)

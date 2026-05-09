@@ -262,13 +262,22 @@ def run_batch_reviewer(
             {
                 "role": "user",
                 "content": (
-                    "Review this batch and improve organization if needed.\n"
-                    f"batch_id={batch_id}\n"
-                    "upload_batch_tree:\n"
-                    f"{upload_tree}\n\n"
-                    "full_updated_destination_tree:\n"
-                    f"{destination_tree}\n\n"
-                    f"user_context:\n{user_context[:4000]}\n"
+                    "# Task\n"
+                    "Review this batch and improve organization if needed.\n\n"
+                    "## Batch metadata\n"
+                    f"- **batch_id**: `{batch_id}`\n\n"
+                    "## Upload batch tree\n"
+                    "```json\n"
+                    f"{upload_tree}\n"
+                    "```\n\n"
+                    "## Updated destination tree\n"
+                    "```json\n"
+                    f"{destination_tree}\n"
+                    "```\n\n"
+                    "## User context\n"
+                    "```markdown\n"
+                    f"{user_context[:4000]}\n"
+                    "```\n"
                 ),
             }
         ]

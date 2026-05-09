@@ -7,6 +7,7 @@ from pathlib import Path
 
 from files_ai.storage import FileRef
 from files_ai.storage import LocalFiles
+from files_ai.tree import build_folder_snapshot_tree
 from files_ai.tree import build_tagged_destination_tree
 from files_ai.tree import build_upload_batch_tree
 
@@ -44,3 +45,15 @@ def test_build_tagged_destination_tree_marks_new_paths(tmp_path: Path) -> None:
     taxes_key = next(iter(taxes.keys()))
     assert "[NEW_FOLDER]" in taxes_key
     assert "w2.pdf [NEW]" in taxes[taxes_key]
+
+
+def test_build_folder_snapshot_tree_omits_files() -> None:
+    """Folder snapshot tree should include folders only."""
+    rendered = build_folder_snapshot_tree(
+        ["10-19 Finance/10 Taxes/10.01 Taxes", "20-29 Projects/21 Client Work"]
+    )
+    payload = json.loads(rendered)
+    assert "10-19 Finance" in payload
+    assert "20-29 Projects" in payload
+    assert "10.01 Taxes" in rendered
+    assert "w2.pdf" not in rendered

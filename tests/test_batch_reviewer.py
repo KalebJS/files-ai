@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 from files_ai.batch_reviewer import BatchReviewTools
+from files_ai.batch_reviewer import run_batch_reviewer
 from files_ai.config import Settings
 from files_ai.mover import move_into_folder
 from files_ai.storage import FileRef
@@ -202,5 +203,61 @@ def test_concurrent_action_cap_is_enforced(tmp_path: Path) -> None:
         assert len(results) == 2
         assert results.count("action_limit_reached") == 1
         assert tools.action_count == 1
+    finally:
+        store.close()
+
+
+def test_run_batch_reviewer_prompt_uses_structured_markdown(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Build reviewer prompt with markdown headers and fenced sections."""
+    settings = _build_settings(tmp_path)
+    files = LocalFiles(tmp_path)
+    dropzone = FileRef("local", settings.dropzone)
+    organized = FileRef("local", settings.organized)
+    files.make_dir(dropzone)
+    files.make_dir(organized)
+    store = Store(settings.state_db)
+    try:
+        batch_id = store.start_batch(mode="test")
+
+        class _RuntimeAgent:
+            def __init__(self) -> None:
+                self.last_request: dict[str, object] | None = None
+
+            def invoke(self, request: object, **_: object) -> dict[str, object]:
+                if isinstance(request, dict):
+                    self.last_request = request
+                return {"output": '{"summary":"ok"}'}
+
+        runtime = _RuntimeAgent()
+        monkeypatch.setattr("files_ai.batch_reviewer.ChatOllama", lambda **_: object())
+        monkeypatch.setattr("files_ai.batch_reviewer.create_agent", lambda **_: runtime)
+
+        run_batch_reviewer(
+            files=files,
+            store=store,
+            settings=settings,
+            organized_root=organized,
+            dropzone_root=dropzone,
+            batch_id=batch_id,
+            batch_source_paths=["a.txt"],
+            new_file_paths=set(),
+            new_folder_paths=set(),
+            user_context="User context for batch review.",
+        )
+
+        assert runtime.last_request is not None
+        messages = runtime.last_request["messages"]
+        assert isinstance(messages, list)
+        content = messages[0]["content"]
+        assert "# Task" in content
+        assert "## Batch metadata" in content
+        assert "## Upload batch tree" in content
+        assert "```json" in content
+        assert "## Updated destination tree" in content
+        assert "## User context" in content
+        assert "```markdown" in content
+        assert "User context for batch review." in content
     finally:
         store.close()

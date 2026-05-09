@@ -20,6 +20,7 @@ from .agent import _configure_langsmith
 from .config import Settings
 from .storage import FileRef
 from .storage import Files
+from .tree import build_folder_snapshot_tree
 
 FOLDER_SYSTEM_PROMPT = (
     "You decide whether a folder should move as one dependency-bound module.\n"
@@ -301,6 +302,7 @@ def decide_folder_action(
         return quick
 
     inspector = _FolderInspector(files, folder_ref)
+    tree_block = build_folder_snapshot_tree(tree_snapshot)
     runtime_agent = create_agent(
         model=agent.llm,
         tools=[
@@ -315,13 +317,22 @@ def decide_folder_action(
             {
                 "role": "user",
                 "content": (
-                    "Decide whether this folder should move as a unit or recurse.\n"
-                    "Use tools before answering; list_children returns a "
-                    "bounded tree.\n"
-                    f"folder_name={files.name_of(folder_ref)}\n"
-                    f"source_relative_dir={source_relative_dir}\n"
-                    f"tree={tree_snapshot}\n"
-                    f"user_context={user_context[:4000]}\n"
+                    "# Task\n"
+                    "Decide whether this folder should move as a unit or recurse.\n\n"
+                    "## Instructions\n"
+                    "- Use tools before answering.\n"
+                    "- `list_children` returns a bounded tree view.\n\n"
+                    "## Folder metadata\n"
+                    f"- **folder_name**: `{files.name_of(folder_ref)}`\n"
+                    f"- **source_relative_dir**: `{source_relative_dir}`\n\n"
+                    "## Existing tree\n"
+                    "```json\n"
+                    f"{tree_block}\n"
+                    "```\n\n"
+                    "## User context\n"
+                    "```markdown\n"
+                    f"{user_context[:4000]}\n"
+                    "```\n"
                 ),
             }
         ]
