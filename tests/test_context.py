@@ -28,10 +28,12 @@ def test_load_user_context_creates_default_when_missing(tmp_path: Path) -> None:
     value = load_user_context(files=files, dropzone=dropzone)
     assert "# About the filesystem user" in value
     assert "# Filesystem expectations" in value
+    assert "# Johnny.Decimal Specifications" in value
     assert "# Filename formatting instructions" in value
     assert (
         "The user values quick retrieval, clarity, and long-term consistency." in value
     )
+    assert "Prefer fewer, broader categories to reduce ambiguity" in value
     assert "Keep filenames readable and concise." in value
     assert (tmp_path / CONTEXT_FILENAME).exists()
 

@@ -16,6 +16,23 @@ DEFAULT_CONTEXT_TEMPLATE = """# About the filesystem user
 - Prefer specific destinations over broad catch-all folders.
 - Reuse existing Johnny.Decimal structure when it is a clear fit.
 
+# Johnny.Decimal Specifications
+
+## Areas
+- Areas are broad groups (like filing cabinets) that cover ranges such as 10-19.
+- Keep them high-level and leave room for expansion.
+- Avoid creating narrow one-off areas.
+
+## Categories
+- Categories are the primary working level and group related IDs.
+- Prefer fewer, broader categories to reduce ambiguity and decision fatigue.
+- If a file could fit in multiple places, choose one stable category and keep using it.
+
+## IDs
+- IDs are the specific destination folders inside a category.
+- Keep routing in Area/Category/ID form.
+- Place items at the most specific matching ID.
+
 # Filename formatting instructions
 - Keep filenames readable and concise.
 - Preserve meaningful details such as dates, version hints, or identifiers.
