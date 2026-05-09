@@ -1,14 +1,24 @@
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.3
-    hooks:
-      - id: ruff-check
-        args: [--fix]
-      - id: ruff-format
-
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.6
-    hooks:
-      - id: bandit
-        args: [-q, -c, pyproject.toml]
-        files: ^src/
+- hooks:
+  - args:
+    - --fix
+    id: ruff-check
+  - id: ruff-format
+  repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.14.3
+- hooks:
+  - args:
+    - -q
+    - -c
+    - pyproject.toml
+    files: ^src/
+    id: bandit
+  repo: https://github.com/PyCQA/bandit
+  rev: 1.8.6
+- hooks:
+  - id: commitizen
+  - id: commitizen-branch
+    stages:
+    - pre-push
+  repo: https://github.com/commitizen-tools/commitizen
+  rev: v4.15.0

@@ -10,7 +10,7 @@ from .storage import Files
 
 
 def build_tree_snapshot(files: Files, root: FileRef, max_depth: int = 4) -> list[str]:
-    """Return sorted folder paths under a root up to a max depth.
+    """Return sorted organized tree paths (folders + files) up to max depth.
 
     Args:
         files: Storage backend.
@@ -18,27 +18,44 @@ def build_tree_snapshot(files: Files, root: FileRef, max_depth: int = 4) -> list
         max_depth: Maximum depth to include.
 
     Returns:
-        list[str]: Sorted relative folder paths.
+        list[str]: Sorted relative paths.
     """
-    snapshot = []
+    snapshot: set[str] = set()
     root_path_len = len(root.path)
     for ref in files.walk_dirs(root, max_depth=max_depth):
         rel = ref.path[root_path_len:].lstrip("/")
         if rel:
-            snapshot.append(rel)
+            parts = [part for part in rel.split("/") if part]
+            if parts:
+                snapshot.add("/".join(parts[: min(len(parts), 3)]))
+    for meta in files.walk(root):
+        rel = meta.ref.path[root_path_len:].lstrip("/")
+        if not rel:
+            continue
+        parts = [part for part in rel.split("/") if part]
+        if len(parts) >= 4 and len(parts) <= max_depth:
+            snapshot.add(rel)
     return sorted(snapshot)
 
 
 def build_folder_snapshot_tree(paths: list[str]) -> str:
     """Build a JSON tree object from folder paths only."""
-    cleaned: list[str] = []
+    cleaned_folders: list[str] = []
+    cleaned_files: list[str] = []
     for raw in paths:
         rel = raw.strip().strip("/")
         if rel:
-            cleaned.append(rel)
-    if not cleaned:
+            parts = [part for part in rel.split("/") if part]
+            if len(parts) >= 4:
+                cleaned_files.append(rel)
+            else:
+                cleaned_folders.append(rel)
+    if not cleaned_folders and not cleaned_files:
         return "{}"
-    tree = _render_johnny_decimal_tree([], folder_paths=sorted(set(cleaned)))
+    tree = _render_johnny_decimal_tree(
+        sorted(set(cleaned_files)),
+        folder_paths=sorted(set(cleaned_folders)),
+    )
     return json.dumps(tree, ensure_ascii=False, indent=2)
 
 
@@ -108,7 +125,7 @@ def _render_johnny_decimal_tree(
     folder_paths: list[str] | None = None,
     folder_tags: dict[str, str] | None = None,
     file_tags: dict[str, str] | None = None,
-    max_files_per_id: int = 5,
+    max_files_per_id: int = 3,
 ) -> dict[str, object]:
     """Render Area/Category/ID tree with ID leaves as file lists."""
     folder_tag_map = folder_tags or {}
