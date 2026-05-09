@@ -47,6 +47,10 @@ This document describes runtime configuration for `files-ai`.
 - `BATCH_REVIEW_MAX_ACTIONS`  
   Maximum number of reviewer tool actions allowed per batch.
 
+- `CONTEXT_MAX_BYTES`  
+  Maximum bytes read from adjacent `CONTEXT.md` and inserted into agent prompts
+  (default `16384`).
+
 ## Processing behavior
 
 - `DRY_RUN` (`true`/`false`)  
@@ -63,6 +67,15 @@ This document describes runtime configuration for `files-ai`.
 
 - `LOG_LEVEL`  
   Logging verbosity (e.g. `INFO`, `DEBUG`).
+
+## Context file behavior
+
+- files-ai looks for a user-maintained `CONTEXT.md` adjacent to `DROPZONE` and
+  includes its content in file-routing, folder-routing, and reviewer prompts.
+- Example path resolution:
+  - `DROPZONE=/dropzone` -> context at `/CONTEXT.md`
+  - `DROPZONE=/data/dropzone` -> context at `/data/CONTEXT.md`
+- Missing context file is treated as empty context.
 
 ## Folder crawling and dependency behavior
 
@@ -83,18 +96,28 @@ This document describes runtime configuration for `files-ai`.
 - Folder moves use directory-level dedupe hashing so duplicate folder trees can
   be skipped similarly to duplicate files.
 
+## Johnny.Decimal destination behavior
+
+- Final destination folders are enforced to Johnny.Decimal `Area/Category/ID`
+  shape, for example:
+  - `10-19 Life Admin/13 Money/13.02 W-2s`
+- If an agent output is partial or non-conforming, files-ai validates/repairs
+  the path and allocates the next available area/category/ID when needed.
+
 ## Post-batch reviewer behavior
 
 - After a batch completes, reviewer input includes:
-  - upload batch tree,
-  - full updated destination tree tagged with newly inserted files/folders,
+  - upload batch tree (JSON object format),
+  - full updated destination tree (JSON object format) tagged with newly
+    inserted files/folders,
+  - user context (from adjacent `CONTEXT.md`),
   - move history for that batch.
 
 - Reviewer tools:
   - read move history,
-  - create folder,
+  - create folder (Johnny.Decimal-normalized),
   - retry item (move back to dropzone),
-  - move item to existing folder.
+  - move item to existing folder (Johnny.Decimal-normalized).
 
 - Reviewer tool actions are tracked in SQLite move history and included in
   batch summaries.

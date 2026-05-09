@@ -26,6 +26,8 @@ Return JSON only with keys:
 
 Hard rules:
 1) Keep folder depth <= 4 and use safe names.
+1.1) Folder must follow Johnny.Decimal shape: Area/Category/ID.
+     Example: 10-19 Life Admin/13 Money/13.02 W-2s
 2) Prefer a specific semantic destination, not generic catch-all bins.
 3) Use an existing folder from tree only when it is clearly the best fit.
 4) If no existing folder fits, create a concise new folder path based on content.
@@ -148,6 +150,7 @@ def decide_folder(
     extracted_text: str,
     tree_snapshot: list[str],
     source_relative_dir: str = "",
+    user_context: str = "",
 ) -> AgentDecision:
     """Ask the agent for a folder decision and normalize output.
 
@@ -157,6 +160,7 @@ def decide_folder(
         extracted_text: Extracted file text used for routing.
         tree_snapshot: Existing organized folder paths for context.
         source_relative_dir: Dropzone-relative source folder context.
+        user_context: User-maintained business/group context from CONTEXT.md.
 
     Returns:
         AgentDecision: Normalized routing decision.
@@ -166,6 +170,7 @@ def decide_folder(
         extracted_text=extracted_text,
         tree_snapshot=tree_snapshot,
         source_relative_dir=source_relative_dir,
+        user_context=user_context,
     )
     payload = {"messages": [{"role": "user", "content": prompt}]}
     response = _invoke_agent(
@@ -210,6 +215,7 @@ def _build_prompt(
     extracted_text: str,
     tree_snapshot: list[str],
     source_relative_dir: str,
+    user_context: str,
 ) -> str:
     """Build a routing prompt with stronger anti-Unsorted guidance."""
     filtered_tree = [folder for folder in tree_snapshot if folder != "Unsorted"]
@@ -217,6 +223,7 @@ def _build_prompt(
     return (
         "Choose folder for file.\n"
         "Decision policy:\n"
+        "- Output Johnny.Decimal Area/Category/ID destination.\n"
         "- Favor specific semantic categories.\n"
         "- Reuse an existing folder only when strongly correct.\n"
         "- If none fit, create a new concise folder path.\n"
@@ -225,6 +232,7 @@ def _build_prompt(
         f"source_relative_dir={source_relative_dir}\n"
         f"tree={filtered_tree}\n"
         f"unsorted_present={unsorted_present}\n"
+        f"user_context={user_context[:4000]}\n"
         f"text={extracted_text[:4000]}"
     )
 

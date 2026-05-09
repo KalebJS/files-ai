@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from files_ai.storage import FileRef
@@ -11,15 +12,17 @@ from files_ai.tree import build_upload_batch_tree
 
 
 def test_build_upload_batch_tree_renders_nested_paths() -> None:
-    """Upload batch tree should render parent and child nodes."""
+    """Upload batch tree should render folder keys with list children."""
     tree = build_upload_batch_tree(["tax/w2.pdf", "tax/receipt.txt"])
-    assert "- tax" in tree
-    assert "- w2.pdf" in tree
-    assert "- receipt.txt" in tree
+    payload = json.loads(tree)
+    assert "tax" in payload
+    children = payload["tax"]
+    assert "receipt.txt" in children
+    assert "w2.pdf" in children
 
 
 def test_build_tagged_destination_tree_marks_new_paths(tmp_path: Path) -> None:
-    """Destination tree should tag new files and folders."""
+    """Destination tree should include new markers in JSON output."""
     files = LocalFiles(tmp_path)
     organized = FileRef("local", "/organized")
     files.make_dir(organized)
@@ -35,5 +38,9 @@ def test_build_tagged_destination_tree_marks_new_paths(tmp_path: Path) -> None:
         new_file_paths={"/organized/Finance/Taxes/w2.pdf"},
         new_folder_paths={"/organized/Finance/Taxes"},
     )
-    assert "[NEW_FOLDER]" in rendered
-    assert "[NEW]" in rendered
+    payload = json.loads(rendered)
+    finance_children = payload["Finance"]
+    taxes = next(item for item in finance_children if isinstance(item, dict))
+    taxes_key = next(iter(taxes.keys()))
+    assert "[NEW_FOLDER]" in taxes_key
+    assert "w2.pdf [NEW]" in taxes[taxes_key]

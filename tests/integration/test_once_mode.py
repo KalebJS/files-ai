@@ -78,7 +78,9 @@ def test_once_mode_processes_dropzone_file(monkeypatch, tmp_path: Path) -> None:
     finally:
         get_settings.cache_clear()
 
-    target = organized / "Finance" / "Invoices" / "invoice.txt"
+    target = (
+        organized / "10-19 Finance" / "10 Invoices" / "10.01 Invoices" / "invoice.txt"
+    )
     assert target.exists()
     assert not source.exists()
     assert not any(dropzone.iterdir())
@@ -90,7 +92,7 @@ def test_once_mode_processes_dropzone_file(monkeypatch, tmp_path: Path) -> None:
         ).fetchone()
     assert count == 1
     assert moved is not None
-    assert moved[0].endswith("/Finance/Invoices/invoice.txt")
+    assert moved[0].endswith("/10-19 Finance/10 Invoices/10.01 Invoices/invoice.txt")
 
 
 def test_once_mode_moves_project_folder_as_unit(monkeypatch, tmp_path: Path) -> None:
@@ -148,7 +150,14 @@ def test_once_mode_moves_project_folder_as_unit(monkeypatch, tmp_path: Path) -> 
         get_settings.cache_clear()
 
     assert not project.exists()
-    assert (organized / "Code" / "Projects" / "my-app" / "main.py").exists()
+    assert (
+        organized
+        / "10-19 Code"
+        / "10 Projects"
+        / "10.01 Projects"
+        / "my-app"
+        / "main.py"
+    ).exists()
     assert not any(dropzone.iterdir())
 
 
@@ -204,8 +213,12 @@ def test_once_mode_recurses_independent_folder(monkeypatch, tmp_path: Path) -> N
     finally:
         get_settings.cache_clear()
 
-    assert (organized / "Finance" / "Taxes" / "w2.pdf").exists()
-    assert (organized / "Finance" / "Taxes" / "receipt.txt").exists()
+    assert (
+        organized / "10-19 Finance" / "10 Taxes" / "10.01 Taxes" / "w2.pdf"
+    ).exists()
+    assert (
+        organized / "10-19 Finance" / "10 Taxes" / "10.01 Taxes" / "receipt.txt"
+    ).exists()
     assert not docs.exists()
     assert not any(dropzone.iterdir())
 

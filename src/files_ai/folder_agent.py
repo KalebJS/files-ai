@@ -35,6 +35,8 @@ FOLDER_SYSTEM_PROMPT = (
     "2) Recurse when children are independent documents/media/notes.\n"
     "3) Never recurse .git directories.\n"
     "4) Keep folder depth <= 4 and use safe names.\n"
+    "4.1) For move_folder, output Johnny.Decimal Area/Category/ID path.\n"
+    "     Example: 10-19 Life Admin/13 Money/13.02 W-2s\n"
     "5) Set quarantine=true only for unsafe/suspicious content.\n"
     "6) If dependency is unclear, choose recurse.\n\n"
     "Dependency policy:\n"
@@ -291,6 +293,7 @@ def decide_folder_action(
     folder_ref: FileRef,
     tree_snapshot: list[str],
     source_relative_dir: str = "",
+    user_context: str = "",
 ) -> FolderDecision:
     """Decide whether to move folder as one module or recurse."""
     quick = _heuristic_decision(files=files, folder_ref=folder_ref)
@@ -318,6 +321,7 @@ def decide_folder_action(
                     f"folder_name={files.name_of(folder_ref)}\n"
                     f"source_relative_dir={source_relative_dir}\n"
                     f"tree={tree_snapshot}\n"
+                    f"user_context={user_context[:4000]}\n"
                 ),
             }
         ]

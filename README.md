@@ -11,6 +11,11 @@ AI-powered file organizer service that watches a dropzone, extracts file content
   - text extraction for `txt`, `pdf`, `docx`,
   - optional OCR for images.
 - LLM-based routing decisions with fallback heuristics.
+- User-maintained `CONTEXT.md` support (read from the directory adjacent to
+  `DROPZONE`) and injected into agent prompts.
+- Johnny.Decimal destination enforcement with automatic area/category/ID
+  allocation in `Area/Category/ID` shape.
+- Agent/reviewer tree context rendered as JSON object structures.
 - SQLite persistence for file metadata and routing decisions.
 - Post-batch refinement reviewer (Kimi K2.6 by default) that can suggest and
   apply follow-up moves/folder creation after each batch.
@@ -78,8 +83,24 @@ Primary environment variables:
 - `BATCH_REVIEW_ENABLED`, `BATCH_REVIEW_MODEL`
 - `BATCH_REVIEW_QUIET_SECONDS`, `BATCH_REVIEW_MAX_ACTIONS`
 - `DRY_RUN`, `OCR_ENABLED`, `MAX_DEPTH`, `EXTRACT_MAX_BYTES`
+- `CONTEXT_MAX_BYTES`
 
 See `docs/CONFIGURATION.md` for details.
+
+## Context file
+
+- Optional context file path is derived from `DROPZONE`:
+  - `DROPZONE=/dropzone` -> `CONTEXT.md` read from `/CONTEXT.md`
+  - `DROPZONE=/data/dropzone` -> `CONTEXT.md` read from `/data/CONTEXT.md`
+- This file is user-maintained and used as additional prompt context for
+  routing and post-batch review.
+
+## Johnny.Decimal routing shape
+
+- Destinations are normalized to `Area/Category/ID` folder paths:
+  - `10-19 Life Admin/13 Money/13.02 W-2s`
+- If a matching location does not already exist, files-ai allocates the next
+  available Johnny.Decimal area/category/ID slot.
 
 ## Development
 

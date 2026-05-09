@@ -13,6 +13,7 @@ from langchain.agents import create_agent
 from langchain_ollama import ChatOllama
 
 from .config import Settings
+from .johnny_decimal import enforce_johnny_decimal_folder
 from .storage import FileRef
 from .storage import Files
 from .store import FileRow
@@ -29,6 +30,7 @@ You may:
 - move items to existing folders
 Rules:
 - Keep folder depth <= 4.
+- Folder paths must follow Johnny.Decimal Area/Category/ID.
 - Never use path traversal.
 - Prefer minimal, high-confidence changes.
 - Return JSON only: {"summary":"short summary of changes and rationale"}.
@@ -81,7 +83,7 @@ class BatchReviewTools:
         with self._lock:
             if not self._consume_action():
                 return "action_limit_reached"
-            rel = _sanitize_relative_folder(path)
+            rel = self._coerce_jd_folder(path)
             if not rel:
                 return "invalid_folder_path"
             dst = self.files.join(self.organized_root, rel)
@@ -136,7 +138,7 @@ class BatchReviewTools:
         with self._lock:
             if not self._consume_action():
                 return "action_limit_reached"
-            rel = _sanitize_relative_folder(folder)
+            rel = self._coerce_jd_folder(folder)
             if not rel:
                 return "invalid_folder_path"
             dst_folder = self.files.join(self.organized_root, rel)
@@ -169,6 +171,16 @@ class BatchReviewTools:
                 model=self.model,
             )
             return dst.path
+
+    def _coerce_jd_folder(self, folder: str) -> str:
+        safe = _sanitize_relative_folder(folder)
+        if not safe:
+            return ""
+        return enforce_johnny_decimal_folder(
+            files=self.files,
+            root=self.organized_root,
+            folder=safe,
+        )
 
     def _consume_action(self) -> bool:
         if self.action_count >= self.max_actions:
@@ -204,6 +216,7 @@ def run_batch_reviewer(
     batch_source_paths: list[str],
     new_file_paths: set[str],
     new_folder_paths: set[str],
+    user_context: str = "",
 ) -> BatchReviewResult:
     """Run post-batch reviewer and return summary plus retry refs."""
     tools = BatchReviewTools(
@@ -254,7 +267,8 @@ def run_batch_reviewer(
                     "upload_batch_tree:\n"
                     f"{upload_tree}\n\n"
                     "full_updated_destination_tree:\n"
-                    f"{destination_tree}\n"
+                    f"{destination_tree}\n\n"
+                    f"user_context:\n{user_context[:4000]}\n"
                 ),
             }
         ]

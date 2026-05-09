@@ -80,7 +80,7 @@ def test_move_item_to_existing_folder_updates_destination(tmp_path: Path) -> Non
     files.make_dir(dropzone)
     files.make_dir(organized)
     files.make_dir(quarantine)
-    files.make_dir(files.join(organized, "Finance/Receipts"))
+    files.make_dir(files.join(organized, "10-19 Finance/10 Receipts/10.01 Receipts"))
     store = Store(settings.state_db)
     try:
         src = files.join(dropzone, "receipt.txt")
@@ -107,10 +107,10 @@ def test_move_item_to_existing_folder_updates_destination(tmp_path: Path) -> Non
         )
         dst = tools.move_item_to_existing_folder(
             str(moved.file_id),
-            "Finance/Receipts",
+            "10-19 Finance/10 Receipts/10.01 Receipts",
             "receipt should be in receipts",
         )
-        assert dst.startswith("/organized/Finance/Receipts/")
+        assert dst.startswith("/organized/10-19 Finance/10 Receipts/10.01 Receipts/")
         row = store.get_file_by_id(moved.file_id)
         assert row is not None
         assert row.dst_path == dst

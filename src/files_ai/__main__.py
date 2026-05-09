@@ -17,11 +17,13 @@ from .agent import decide_folder
 from .batch_reviewer import run_batch_reviewer
 from .config import Settings
 from .config import get_settings
+from .context import load_user_context
 from .extract import extract_file
 from .folder_agent import FolderAgent
 from .folder_agent import FolderDecision
 from .folder_agent import build_folder_agent
 from .folder_agent import decide_folder_action
+from .johnny_decimal import enforce_johnny_decimal_folder
 from .logging import configure_logging
 from .storage import FileRef
 from .storage import Files
@@ -140,6 +142,7 @@ def _process_ref(
     watcher: StableFileWatcher,
     batch_id: int | None = None,
     batch_ctx: BatchContext | None = None,
+    user_context: str = "",
 ) -> None:
     """Process a file or directory reference."""
     if watcher.should_skip(ref):
@@ -161,6 +164,7 @@ def _process_ref(
             watcher=watcher,
             batch_id=batch_id,
             batch_ctx=batch_ctx,
+            user_context=user_context,
         )
         return
     if watcher.is_stable(ref):
@@ -174,6 +178,7 @@ def _process_ref(
             agent=file_agent,
             batch_id=batch_id,
             batch_ctx=batch_ctx,
+            user_context=user_context,
         )
 
 
@@ -202,6 +207,11 @@ def _process_batch(
     batch_ctx = BatchContext(
         source_paths=[], moved_destinations=set(), new_folders=set()
     )
+    user_context = load_user_context(
+        files=tools.ctx.files,
+        dropzone=dropzone,
+        max_bytes=settings.context_max_bytes,
+    )
     batch_id = tools.ctx.store.start_batch(mode=mode)
     for ref in refs:
         _process_ref(
@@ -214,6 +224,7 @@ def _process_batch(
             watcher=watcher,
             batch_id=batch_id,
             batch_ctx=batch_ctx,
+            user_context=user_context,
         )
     post_tree = set(
         build_tree_snapshot(
@@ -240,6 +251,7 @@ def _process_batch(
                 batch_source_paths=batch_ctx.source_paths,
                 new_file_paths=batch_ctx.moved_destinations,
                 new_folder_paths=batch_ctx.new_folders,
+                user_context=user_context,
             )
             for retry_ref in review.retry_refs:
                 _process_ref(
@@ -252,6 +264,7 @@ def _process_batch(
                     watcher=watcher,
                     batch_id=batch_id,
                     batch_ctx=batch_ctx,
+                    user_context=user_context,
                 )
             summary = review.summary
             log.info(
@@ -276,6 +289,7 @@ def _process_file(
     agent: AgentProtocol,
     batch_id: int | None = None,
     batch_ctx: BatchContext | None = None,
+    user_context: str = "",
 ) -> None:
     """Process one file end-to-end and persist decision metadata.
 
@@ -287,6 +301,7 @@ def _process_file(
         agent: Routing agent with an `invoke` interface.
         batch_id: Optional batch id used for move-history tracking.
         batch_ctx: Optional in-memory batch context accumulator.
+        user_context: User-maintained context included in agent prompts.
     """
     log = structlog.get_logger("files_ai.processor").bind(
         path=ref.path,
@@ -314,6 +329,7 @@ def _process_file(
         extracted_text=extraction.text,
         tree_snapshot=snapshot,
         source_relative_dir=str(ref.extra.get("dropzone_relative_dir", "")),
+        user_context=user_context,
     )
     result = _apply_decision(
         ref=ref,
@@ -373,6 +389,7 @@ def _process_directory(
     watcher: StableFileWatcher,
     batch_id: int | None = None,
     batch_ctx: BatchContext | None = None,
+    user_context: str = "",
 ) -> None:
     """Process one directory by either moving it or recursing children."""
     log = structlog.get_logger("files_ai.processor").bind(
@@ -393,6 +410,7 @@ def _process_directory(
         folder_ref=ref,
         tree_snapshot=snapshot,
         source_relative_dir=str(ref.extra.get("dropzone_relative_dir", "")),
+        user_context=user_context,
     )
     if decision.action == "recurse":
         log.info("folder_recurse", confidence=decision.confidence)
@@ -406,6 +424,7 @@ def _process_directory(
             watcher=watcher,
             batch_id=batch_id,
             batch_ctx=batch_ctx,
+            user_context=user_context,
         )
         if not tools.ctx.dry_run:
             _prune_dropzone_ancestors(
@@ -467,6 +486,7 @@ def _recurse_directory(
     watcher: StableFileWatcher,
     batch_id: int | None = None,
     batch_ctx: BatchContext | None = None,
+    user_context: str = "",
 ) -> None:
     """Recursively process a directory's children with folder decisions."""
     pending: deque[FileRef] = deque(meta.ref for meta in tools.ctx.files.iterdir(ref))
@@ -488,6 +508,7 @@ def _recurse_directory(
                     agent=file_agent,
                     batch_id=batch_id,
                     batch_ctx=batch_ctx,
+                    user_context=user_context,
                 )
             continue
         snapshot = build_tree_snapshot(
@@ -499,6 +520,7 @@ def _recurse_directory(
             folder_ref=child,
             tree_snapshot=snapshot,
             source_relative_dir=str(child.extra.get("dropzone_relative_dir", "")),
+            user_context=user_context,
         )
         if decision.action == "recurse":
             pending.extend(meta.ref for meta in tools.ctx.files.iterdir(child))
@@ -616,12 +638,11 @@ def _apply_decision(
     """
     if decision.quarantine:
         return tools.quarantine_file(ref, mime=mime, extracted_chars=extracted_chars)
-    folder = tools.propose_folder(decision.folder)
-    parts = [part for part in PurePosixPath(folder).parts if part not in {"", "/"}]
-    root_name = PurePosixPath(tools.ctx.organized_root.path).name
-    if parts and parts[0] == root_name:
-        parts = parts[1:]
-    normalized = "/".join(parts[:4]) or "Unsorted"
+    normalized = enforce_johnny_decimal_folder(
+        files=tools.ctx.files,
+        root=tools.ctx.organized_root,
+        folder=decision.folder,
+    )
     return tools.move_file(ref, normalized, mime=mime, extracted_chars=extracted_chars)
 
 
@@ -634,12 +655,11 @@ def _apply_folder_decision(
     """Apply folder decision by moving folder or quarantining it."""
     if decision.quarantine:
         return tools.quarantine_file(ref, mime="inode/directory", extracted_chars=0)
-    folder = tools.propose_folder(decision.folder)
-    parts = [part for part in PurePosixPath(folder).parts if part not in {"", "/"}]
-    root_name = PurePosixPath(tools.ctx.organized_root.path).name
-    if parts and parts[0] == root_name:
-        parts = parts[1:]
-    normalized = "/".join(parts[:4]) or "Unsorted"
+    normalized = enforce_johnny_decimal_folder(
+        files=tools.ctx.files,
+        root=tools.ctx.organized_root,
+        folder=decision.folder,
+    )
     return tools.move_ref(ref, normalized, mime="inode/directory", extracted_chars=0)
 
 

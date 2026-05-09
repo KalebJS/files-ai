@@ -120,6 +120,7 @@ def test_decide_folder_prompt_discourages_unsorted() -> None:
         extracted_text="data structure assignment",
         tree_snapshot=["Unsorted", "Finance/Invoices"],
         source_relative_dir="Security",
+        user_context="You manage files for Acme Finance.",
     )
     assert agent.last_request is not None
     messages = agent.last_request.get("messages")
@@ -129,6 +130,7 @@ def test_decide_folder_prompt_discourages_unsorted() -> None:
     assert "tree=['Finance/Invoices']" in content
     assert "unsorted_present=True" in content
     assert "Avoid Unsorted except as a true last resort." in content
+    assert "user_context=You manage files for Acme Finance." in content
 
 
 def test_decide_folder_sends_trace_metadata() -> None:
