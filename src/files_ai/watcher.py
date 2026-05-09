@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import queue
+import threading
 import time
 from typing import Iterator
 
@@ -66,6 +68,44 @@ class StableFileWatcher:
             if self.is_stable(event.ref):
                 yield event.ref
 
+    def iter_stable_event_batches(
+        self,
+        dropzone: FileRef,
+        *,
+        quiet_seconds: float,
+        include_directories: bool = False,
+    ) -> Iterator[list[FileRef]]:
+        """Yield event batches split by a quiet period with no new stable refs."""
+        out_queue: queue.Queue[FileRef | None] = queue.Queue()
+
+        def _producer() -> None:
+            try:
+                for ref in self.iter_stable_events(
+                    dropzone, include_directories=include_directories
+                ):
+                    out_queue.put(ref)
+            finally:
+                out_queue.put(None)
+
+        producer = threading.Thread(target=_producer, daemon=True)
+        producer.start()
+        batch: list[FileRef] = []
+
+        while True:
+            timeout = quiet_seconds if batch else 0.25
+            try:
+                item = out_queue.get(timeout=timeout)
+            except queue.Empty:
+                if batch:
+                    yield _dedupe_refs(batch)
+                    batch = []
+                continue
+            if item is None:
+                if batch:
+                    yield _dedupe_refs(batch)
+                return
+            batch.append(item)
+
     def stop(self) -> None:
         """Stop underlying backend watcher."""
         self.files.stop_watch()
@@ -107,3 +147,14 @@ class StableFileWatcher:
         if name == ".git":
             return False
         return name.startswith(SKIP_PREFIXES) or name.endswith(SKIP_SUFFIXES)
+
+
+def _dedupe_refs(refs: list[FileRef]) -> list[FileRef]:
+    """Deduplicate refs by path while preserving latest event order."""
+    seen: dict[str, FileRef] = {}
+    order: list[str] = []
+    for ref in refs:
+        if ref.path not in seen:
+            order.append(ref.path)
+        seen[ref.path] = ref
+    return [seen[path] for path in order]

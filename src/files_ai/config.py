@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     ollama_api_key: SecretStr = SecretStr("")
     ollama_base_url: str = "https://ollama.com"
     model: str = "gpt-oss:120b-cloud"
+    batch_review_enabled: bool = True
+    batch_review_model: str = "kimi-k2.6"
+    batch_review_quiet_seconds: float = 5.0
+    batch_review_max_actions: int = 20
     langsmith_tracing: bool = False
     langsmith_api_key: SecretStr = SecretStr("")
     langsmith_project: str = "files-ai"

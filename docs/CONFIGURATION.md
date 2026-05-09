@@ -33,6 +33,20 @@ This document describes runtime configuration for `files-ai`.
 - `MODEL`  
   Chat model name, default `gpt-oss:120b-cloud`.
 
+- `BATCH_REVIEW_ENABLED` (`true`/`false`)  
+  Enables post-batch refinement review after batch processing completes
+  (default `true`).
+
+- `BATCH_REVIEW_MODEL`  
+  Reviewer model name, default `kimi-k2.6`.
+
+- `BATCH_REVIEW_QUIET_SECONDS`  
+  In watch mode, minimum quiet window with no new stable events before a
+  batch is considered complete and reviewed.
+
+- `BATCH_REVIEW_MAX_ACTIONS`  
+  Maximum number of reviewer tool actions allowed per batch.
+
 ## Processing behavior
 
 - `DRY_RUN` (`true`/`false`)  
@@ -68,6 +82,22 @@ This document describes runtime configuration for `files-ai`.
 
 - Folder moves use directory-level dedupe hashing so duplicate folder trees can
   be skipped similarly to duplicate files.
+
+## Post-batch reviewer behavior
+
+- After a batch completes, reviewer input includes:
+  - upload batch tree,
+  - full updated destination tree tagged with newly inserted files/folders,
+  - move history for that batch.
+
+- Reviewer tools:
+  - read move history,
+  - create folder,
+  - retry item (move back to dropzone),
+  - move item to existing folder.
+
+- Reviewer tool actions are tracked in SQLite move history and included in
+  batch summaries.
 
 ## Docker notes
 

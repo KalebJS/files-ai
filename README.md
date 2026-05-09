@@ -12,6 +12,8 @@ AI-powered file organizer service that watches a dropzone, extracts file content
   - optional OCR for images.
 - LLM-based routing decisions with fallback heuristics.
 - SQLite persistence for file metadata and routing decisions.
+- Post-batch refinement reviewer (Kimi K2.6 by default) that can suggest and
+  apply follow-up moves/folder creation after each batch.
 - Docker Compose deployment with host-mounted data.
 
 ## Project layout
@@ -73,6 +75,8 @@ Primary environment variables:
 - `BACKEND_OPTS__ROOT` (default `/data`)
 - `DROPZONE`, `ORGANIZED`, `QUARANTINE`
 - `OLLAMA_API_KEY`, `OLLAMA_BASE_URL`, `MODEL`
+- `BATCH_REVIEW_ENABLED`, `BATCH_REVIEW_MODEL`
+- `BATCH_REVIEW_QUIET_SECONDS`, `BATCH_REVIEW_MAX_ACTIONS`
 - `DRY_RUN`, `OCR_ENABLED`, `MAX_DEPTH`, `EXTRACT_MAX_BYTES`
 
 See `docs/CONFIGURATION.md` for details.
