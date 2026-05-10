@@ -22,6 +22,18 @@ class _DummyFolderAgent:
     """Minimal fake folder agent object for patched runtime execution."""
 
 
+class _DummyAreaAgent:
+    """Minimal fake area moderation agent for patched runtime execution."""
+
+    def invoke(self, _request: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "output": (
+                '{"approved":true,"reasoning":"approved for test",'
+                '"folder":null,"confidence":1.0,"quarantine":false}'
+            )
+        }
+
+
 def test_once_mode_processes_dropzone_file(monkeypatch, tmp_path: Path) -> None:
     """Process one dropzone file end-to-end in --once mode.
 
@@ -50,6 +62,9 @@ def test_once_mode_processes_dropzone_file(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("sys.argv", ["files-ai", "--once"])
     monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
     monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
+    monkeypatch.setattr(
+        app, "build_area_creation_agent_from_settings", lambda _: _DummyAreaAgent()
+    )
     monkeypatch.setattr(
         app,
         "decide_folder",
@@ -121,6 +136,9 @@ def test_once_mode_moves_project_folder_as_unit(monkeypatch, tmp_path: Path) -> 
     monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
     monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
     monkeypatch.setattr(
+        app, "build_area_creation_agent_from_settings", lambda _: _DummyAreaAgent()
+    )
+    monkeypatch.setattr(
         app,
         "decide_folder",
         lambda *_args, **_kwargs: AgentDecision(
@@ -183,6 +201,9 @@ def test_once_mode_recurses_independent_folder(monkeypatch, tmp_path: Path) -> N
     monkeypatch.setattr("sys.argv", ["files-ai", "--once"])
     monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
     monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
+    monkeypatch.setattr(
+        app, "build_area_creation_agent_from_settings", lambda _: _DummyAreaAgent()
+    )
     monkeypatch.setattr(
         app,
         "decide_folder",
@@ -260,6 +281,9 @@ def test_once_mode_moves_duplicates_to_quarantine(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
     monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
     monkeypatch.setattr(
+        app, "build_area_creation_agent_from_settings", lambda _: _DummyAreaAgent()
+    )
+    monkeypatch.setattr(
         app,
         "decide_folder",
         lambda *_args, **_kwargs: AgentDecision(
@@ -317,6 +341,9 @@ def test_once_mode_renames_file_when_agent_suggests(
     monkeypatch.setattr("sys.argv", ["files-ai", "--once"])
     monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
     monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
+    monkeypatch.setattr(
+        app, "build_area_creation_agent_from_settings", lambda _: _DummyAreaAgent()
+    )
     monkeypatch.setattr(
         app,
         "decide_folder",

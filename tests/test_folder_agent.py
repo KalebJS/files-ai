@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from files_ai.config import Settings
 from files_ai.folder_agent import FOLDER_SYSTEM_PROMPT
 from files_ai.folder_agent import _FolderInspector
 from files_ai.folder_agent import _heuristic_decision
 from files_ai.folder_agent import _invoke_agent
+from files_ai.folder_agent import build_folder_agent
 from files_ai.folder_agent import decide_folder_action
 from files_ai.storage import FileRef
 from files_ai.storage import LocalFiles
@@ -121,6 +123,28 @@ def test_decide_folder_action_short_circuits_git_without_llm(tmp_path: Path) -> 
     assert decision.action == "move_folder"
 
 
+def test_build_folder_agent_uses_default_reasoning_effort(monkeypatch) -> None:
+    """Build folder agent with medium reasoning effort by default."""
+    captured: dict[str, object] = {}
+
+    class FakeChatOllama:
+        def __init__(self, **kwargs: object) -> None:
+            captured["llm_kwargs"] = kwargs
+
+    monkeypatch.setattr("files_ai.folder_agent.ChatOllama", FakeChatOllama)
+    settings = Settings(
+        model="gpt-oss:120b-cloud",
+        ollama_base_url="https://ollama.example",
+        ollama_api_key="secret",
+    )
+
+    build_folder_agent(settings)
+
+    llm_kwargs = captured["llm_kwargs"]
+    assert isinstance(llm_kwargs, dict)
+    assert llm_kwargs["reasoning"] == "medium"
+
+
 def test_folder_invoke_agent_sends_agent_specific_tags() -> None:
     """Attach LangSmith tags that identify folder-agent traces."""
 
@@ -153,6 +177,8 @@ def test_folder_prompt_enforces_dependency_not_theme() -> None:
     """Prompt should default to recurse when only thematic similarity exists."""
     assert "If dependency is unclear, choose recurse." in FOLDER_SYSTEM_PROMPT
     assert "Not enough evidence: same theme/category" in FOLDER_SYSTEM_PROMPT
+    assert "Top-level areas are capped at 10 total" in FOLDER_SYSTEM_PROMPT
+    assert "Never create duplicate/overflow 90-99 areas" in FOLDER_SYSTEM_PROMPT
     assert "folder_name=Financial" in FOLDER_SYSTEM_PROMPT
     assert '"action":"recurse"' in FOLDER_SYSTEM_PROMPT
 

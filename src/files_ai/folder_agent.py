@@ -38,6 +38,9 @@ FOLDER_SYSTEM_PROMPT = (
     "4) Keep folder depth <= 4 and use safe names.\n"
     "4.1) For move_folder, output Johnny.Decimal Area/Category/ID path.\n"
     "     Example: 10-19 Life Admin/13 Money/13.02 W-2s\n"
+    "4.2) Top-level areas are capped at 10 total: 00-09 through 90-99.\n"
+    "4.3) Never create duplicate/overflow 90-99 areas.\n"
+    "4.4) Prefer existing broad areas over creating narrow new areas.\n"
     "5) Set quarantine=true only for unsafe/suspicious content.\n"
     "6) If dependency is unclear, choose recurse.\n\n"
     "Dependency policy:\n"
@@ -276,6 +279,7 @@ def build_folder_agent(settings: Settings) -> FolderAgent:
     _configure_langsmith(settings)
     llm = ChatOllama(
         model=settings.model,
+        reasoning=settings.model_reasoning,
         base_url=settings.ollama_base_url,
         client_kwargs={
             "headers": {

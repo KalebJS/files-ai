@@ -21,6 +21,23 @@ class _Index:
     ids: dict[tuple[int, int, int], str]
 
 
+@dataclass(frozen=True)
+class JohnnyDecimalCreationAnalysis:
+    """Analysis of whether a proposed path creates new area/category structure."""
+
+    requires_moderation: bool
+    creates_area: bool
+    creates_category: bool
+    area_limit_reached: bool
+    area_label: str
+    category_label: str
+    id_label: str
+
+
+class JohnnyDecimalLimitError(ValueError):
+    """Raised when Johnny.Decimal limits prevent safe allocation."""
+
+
 def enforce_johnny_decimal_folder(*, files: Files, root: FileRef, folder: str) -> str:
     """Return a folder path normalized to Area/Category/ID shape."""
     index = _build_index(files=files, root=root)
@@ -38,6 +55,41 @@ def enforce_johnny_decimal_folder(*, files: Files, root: FileRef, folder: str) -
         label=id_label,
     )
     return "/".join([area_segment, category_segment, id_segment])
+
+
+def analyze_johnny_decimal_creation(
+    *,
+    files: Files,
+    root: FileRef,
+    folder: str,
+) -> JohnnyDecimalCreationAnalysis:
+    """Analyze whether a proposal requires new area/category creation."""
+    index = _build_index(files=files, root=root)
+    area_label, category_label, id_label = _extract_labels(folder)
+    wanted_area = _normalize_name(area_label)
+    wanted_category = _normalize_name(category_label)
+
+    existing_area_start = _find_area_start(index=index, wanted=wanted_area)
+    creates_area = existing_area_start is None
+    area_limit_reached = creates_area and _next_area_slot(index) is None
+
+    if creates_area:
+        creates_category = True
+    else:
+        creates_category = not _area_has_category(
+            index=index,
+            area_start=existing_area_start,
+            wanted=wanted_category,
+        )
+    return JohnnyDecimalCreationAnalysis(
+        requires_moderation=creates_area or creates_category,
+        creates_area=creates_area,
+        creates_category=creates_category,
+        area_limit_reached=area_limit_reached,
+        area_label=area_label,
+        category_label=category_label,
+        id_label=id_label,
+    )
 
 
 def _build_index(*, files: Files, root: FileRef) -> _Index:
@@ -97,6 +149,8 @@ def _ensure_area(*, index: _Index, label: str) -> str:
         if _normalize_name(parsed[1]) == wanted:
             return segment
     slot = _next_area_slot(index)
+    if slot is None:
+        raise JohnnyDecimalLimitError("Maximum number of areas (10) reached.")
     segment = f"{slot:02d}-{slot + 9:02d} {label}"
     index.areas[slot] = segment
     return segment
@@ -114,11 +168,10 @@ def _ensure_category(*, index: _Index, area_start: int, label: str) -> str:
             return segment
     slot = _next_category_slot(index=index, area_start=area_start)
     if slot is None:
-        new_area = _next_area_slot(index)
-        area_segment = f"{new_area:02d}-{new_area + 9:02d} {label}"
-        index.areas[new_area] = area_segment
-        area_start = new_area
-        slot = area_start
+        raise JohnnyDecimalLimitError(
+            "Maximum categories (10) reached for area "
+            f"{area_start:02d}-{area_start + 9:02d}."
+        )
     segment = f"{slot:02d} {label}"
     index.categories[(area_start, slot)] = segment
     return segment
@@ -136,26 +189,41 @@ def _ensure_id(*, index: _Index, area_start: int, category_num: int, label: str)
             return segment
     slot = _next_id_slot(index=index, area_start=area_start, category_num=category_num)
     if slot is None:
-        next_category = _next_category_slot(index=index, area_start=area_start)
-        if next_category is None:
-            next_area = _next_area_slot(index)
-            index.areas[next_area] = f"{next_area:02d}-{next_area + 9:02d} {label}"
-            area_start = next_area
-            category_num = area_start
-        else:
-            category_num = next_category
-        index.categories[(area_start, category_num)] = f"{category_num:02d} {label}"
-        slot = 1
+        raise JohnnyDecimalLimitError(
+            f"Maximum IDs (99) reached for category {category_num:02d}."
+        )
     segment = f"{category_num:02d}.{slot:02d} {label}"
     index.ids[(area_start, category_num, slot)] = segment
     return segment
 
 
-def _next_area_slot(index: _Index) -> int:
+def _next_area_slot(index: _Index) -> int | None:
     for value in [10, 20, 30, 40, 50, 60, 70, 80, 90, 0]:
         if value not in index.areas:
             return value
-    return 90
+    return None
+
+
+def _find_area_start(*, index: _Index, wanted: str) -> int | None:
+    for start, segment in sorted(index.areas.items()):
+        parsed = _parse_area(segment)
+        if parsed is None:
+            continue
+        if _normalize_name(parsed[1]) == wanted:
+            return start
+    return None
+
+
+def _area_has_category(*, index: _Index, area_start: int, wanted: str) -> bool:
+    for (area, _num), segment in sorted(index.categories.items()):
+        if area != area_start:
+            continue
+        parsed = _parse_category(segment)
+        if parsed is None:
+            continue
+        if _normalize_name(parsed[1]) == wanted:
+            return True
+    return False
 
 
 def _next_category_slot(*, index: _Index, area_start: int) -> int | None:

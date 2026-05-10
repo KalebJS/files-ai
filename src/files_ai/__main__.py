@@ -6,6 +6,7 @@ import argparse
 import json
 import signal
 from collections import deque
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 import structlog
@@ -14,6 +15,10 @@ from .agent import AgentDecision
 from .agent import AgentProtocol
 from .agent import build_agent
 from .agent import decide_folder
+from .area_agent import AreaAgentProtocol
+from .area_agent import AreaCreationDecision
+from .area_agent import build_area_creation_agent_from_settings
+from .area_agent import moderate_area_creation
 from .config import Settings
 from .config import get_settings
 from .context import load_user_context
@@ -22,6 +27,9 @@ from .folder_agent import FolderAgent
 from .folder_agent import FolderDecision
 from .folder_agent import build_folder_agent
 from .folder_agent import decide_folder_action
+from .johnny_decimal import JohnnyDecimalCreationAnalysis
+from .johnny_decimal import JohnnyDecimalLimitError
+from .johnny_decimal import analyze_johnny_decimal_creation
 from .johnny_decimal import enforce_johnny_decimal_folder
 from .logging import configure_logging
 from .storage import FileRef
@@ -70,6 +78,7 @@ def main() -> None:
     watcher = StableFileWatcher(files)
     agent = build_agent(settings)
     folder_agent = build_folder_agent(settings)
+    area_agent = build_area_creation_agent_from_settings(settings)
     stopped = False
 
     def _stop(*_: object) -> None:
@@ -94,6 +103,7 @@ def main() -> None:
             tools=tools,
             file_agent=agent,
             folder_agent=folder_agent,
+            area_agent=area_agent,
             watcher=watcher,
         )
         if args.once:
@@ -113,6 +123,7 @@ def main() -> None:
                 tools=tools,
                 file_agent=agent,
                 folder_agent=folder_agent,
+                area_agent=area_agent,
                 watcher=watcher,
             )
     finally:
@@ -129,6 +140,7 @@ def _process_ref(
     tools: OrganizerTools,
     file_agent: AgentProtocol,
     folder_agent: FolderAgent,
+    area_agent: AreaAgentProtocol,
     watcher: StableFileWatcher,
     batch_id: int | None = None,
     user_context: str = "",
@@ -148,6 +160,7 @@ def _process_ref(
             tools=tools,
             file_agent=file_agent,
             folder_agent=folder_agent,
+            area_agent=area_agent,
             watcher=watcher,
             batch_id=batch_id,
             user_context=user_context,
@@ -160,6 +173,7 @@ def _process_ref(
             settings=settings,
             tools=tools,
             agent=file_agent,
+            area_agent=area_agent,
             batch_id=batch_id,
             user_context=user_context,
         )
@@ -174,6 +188,7 @@ def _process_batch(
     tools: OrganizerTools,
     file_agent: AgentProtocol,
     folder_agent: FolderAgent,
+    area_agent: AreaAgentProtocol,
     watcher: StableFileWatcher,
 ) -> None:
     """Process a batch of refs and persist batch summary."""
@@ -193,6 +208,7 @@ def _process_batch(
             tools=tools,
             file_agent=file_agent,
             folder_agent=folder_agent,
+            area_agent=area_agent,
             watcher=watcher,
             batch_id=batch_id,
             user_context=user_context,
@@ -211,6 +227,7 @@ def _process_file(
     settings: Settings,
     tools: OrganizerTools,
     agent: AgentProtocol,
+    area_agent: AreaAgentProtocol,
     batch_id: int | None = None,
     user_context: str = "",
 ) -> None:
@@ -222,6 +239,7 @@ def _process_file(
         settings: Runtime settings.
         tools: Organizer tool facade.
         agent: Routing agent with an `invoke` interface.
+        area_agent: Moderation agent for new area/category creation.
         batch_id: Optional batch id used for move-history tracking.
         user_context: User-maintained context included in agent prompts.
     """
@@ -254,11 +272,21 @@ def _process_file(
         source_relative_dir=str(ref.extra.get("dropzone_relative_dir", "")),
         user_context=user_context,
     )
+    moderated_file_decision = _moderate_file_decision(
+        decision=decision,
+        area_agent=area_agent,
+        tools=tools,
+        snapshot=snapshot,
+        source_relative_dir=str(ref.extra.get("dropzone_relative_dir", "")),
+        user_context=user_context,
+        filename=tools.ctx.files.name_of(ref),
+        extracted_text=extraction.text,
+    )
     result = _apply_decision(
         ref=ref,
-        decision=decision,
+        decision=moderated_file_decision,
         tools=tools,
-        target_filename=decision.filename,
+        target_filename=moderated_file_decision.filename,
         mime=extraction.mime,
         extracted_chars=len(extraction.text),
     )
@@ -267,7 +295,7 @@ def _process_file(
         if result.destination is not None
         else None
     )
-    rename_requested = decision.filename is not None
+    rename_requested = moderated_file_decision.filename is not None
     renamed = (
         final_filename is not None
         and final_filename != original_filename
@@ -282,12 +310,18 @@ def _process_file(
     if result.file_id is not None:
         tools.ctx.store.add_decision(
             result.file_id,
-            reasoning=decision.reasoning,
-            tools_called="move_file" if not decision.quarantine else "quarantine_file",
+            reasoning=moderated_file_decision.reasoning,
+            tools_called=(
+                "move_file"
+                if not moderated_file_decision.quarantine
+                else "quarantine_file"
+            ),
             model=settings.model,
         )
     if batch_id is not None:
-        action = "quarantine_file" if decision.quarantine else "move_file"
+        action = (
+            "quarantine_file" if moderated_file_decision.quarantine else "move_file"
+        )
         if result.duplicate:
             action = "duplicate_file"
         tools.ctx.store.add_move_history(
@@ -298,12 +332,12 @@ def _process_file(
             dst_path=result.destination.path
             if result.destination is not None
             else None,
-            reason=decision.reasoning,
+            reason=moderated_file_decision.reasoning,
             model=settings.model,
             metadata=json.dumps(
                 {
                     "original_filename": original_filename,
-                    "requested_filename": decision.filename,
+                    "requested_filename": moderated_file_decision.filename,
                     "final_filename": final_filename,
                     "rename_requested": rename_requested,
                     "renamed": renamed,
@@ -317,7 +351,7 @@ def _process_file(
         duplicate=result.duplicate,
         dry_run=result.dry_run,
         tier=extraction.tier,
-        confidence=decision.confidence,
+        confidence=moderated_file_decision.confidence,
         rename_requested=rename_requested,
         renamed=renamed,
         filename=final_filename,
@@ -332,6 +366,7 @@ def _process_directory(
     tools: OrganizerTools,
     file_agent: AgentProtocol,
     folder_agent: FolderAgent,
+    area_agent: AreaAgentProtocol,
     watcher: StableFileWatcher,
     batch_id: int | None = None,
     user_context: str = "",
@@ -357,8 +392,17 @@ def _process_directory(
         source_relative_dir=str(ref.extra.get("dropzone_relative_dir", "")),
         user_context=user_context,
     )
-    if decision.action == "recurse":
-        log.info("folder_recurse", confidence=decision.confidence)
+    moderated_folder_decision = _moderate_folder_decision(
+        decision=decision,
+        area_agent=area_agent,
+        tools=tools,
+        snapshot=snapshot,
+        source_relative_dir=str(ref.extra.get("dropzone_relative_dir", "")),
+        user_context=user_context,
+        folder_name=tools.ctx.files.name_of(ref),
+    )
+    if moderated_folder_decision.action == "recurse":
+        log.info("folder_recurse", confidence=moderated_folder_decision.confidence)
         _recurse_directory(
             ref=ref,
             dropzone=dropzone,
@@ -366,6 +410,7 @@ def _process_directory(
             tools=tools,
             file_agent=file_agent,
             folder_agent=folder_agent,
+            area_agent=area_agent,
             watcher=watcher,
             batch_id=batch_id,
             user_context=user_context,
@@ -379,20 +424,26 @@ def _process_directory(
         return
     result = _apply_folder_decision(
         ref=ref,
-        decision=decision,
+        decision=moderated_folder_decision,
         tools=tools,
     )
     if result.file_id is not None:
         tools.ctx.store.add_decision(
             result.file_id,
-            reasoning=decision.reasoning,
+            reasoning=moderated_folder_decision.reasoning,
             tools_called=(
-                "move_folder" if not decision.quarantine else "quarantine_folder"
+                "move_folder"
+                if not moderated_folder_decision.quarantine
+                else "quarantine_folder"
             ),
             model=settings.model,
         )
     if batch_id is not None:
-        action = "quarantine_folder" if decision.quarantine else "move_folder"
+        action = (
+            "quarantine_folder"
+            if moderated_folder_decision.quarantine
+            else "move_folder"
+        )
         if result.duplicate:
             action = "duplicate_folder"
         tools.ctx.store.add_move_history(
@@ -403,7 +454,7 @@ def _process_directory(
             dst_path=result.destination.path
             if result.destination is not None
             else None,
-            reason=decision.reasoning,
+            reason=moderated_folder_decision.reasoning,
             model=settings.model,
         )
     if result.destination is not None and not result.dry_run:
@@ -413,7 +464,7 @@ def _process_directory(
         destination=(result.destination.path if result.destination else None),
         duplicate=result.duplicate,
         dry_run=result.dry_run,
-        confidence=decision.confidence,
+        confidence=moderated_folder_decision.confidence,
     )
 
 
@@ -425,6 +476,7 @@ def _recurse_directory(
     tools: OrganizerTools,
     file_agent: AgentProtocol,
     folder_agent: FolderAgent,
+    area_agent: AreaAgentProtocol,
     watcher: StableFileWatcher,
     batch_id: int | None = None,
     user_context: str = "",
@@ -447,6 +499,7 @@ def _recurse_directory(
                     settings=settings,
                     tools=tools,
                     agent=file_agent,
+                    area_agent=area_agent,
                     batch_id=batch_id,
                     user_context=user_context,
                 )
@@ -462,12 +515,21 @@ def _recurse_directory(
             source_relative_dir=str(child.extra.get("dropzone_relative_dir", "")),
             user_context=user_context,
         )
-        if decision.action == "recurse":
+        moderated_folder_decision = _moderate_folder_decision(
+            decision=decision,
+            area_agent=area_agent,
+            tools=tools,
+            snapshot=snapshot,
+            source_relative_dir=str(child.extra.get("dropzone_relative_dir", "")),
+            user_context=user_context,
+            folder_name=tools.ctx.files.name_of(child),
+        )
+        if moderated_folder_decision.action == "recurse":
             pending.extend(meta.ref for meta in tools.ctx.files.iterdir(child))
             continue
         result = _apply_folder_decision(
             ref=child,
-            decision=decision,
+            decision=moderated_folder_decision,
             tools=tools,
         )
         if result.destination is not None and not result.dry_run:
@@ -479,14 +541,20 @@ def _recurse_directory(
         if result.file_id is not None:
             tools.ctx.store.add_decision(
                 result.file_id,
-                reasoning=decision.reasoning,
+                reasoning=moderated_folder_decision.reasoning,
                 tools_called=(
-                    "move_folder" if not decision.quarantine else "quarantine_folder"
+                    "move_folder"
+                    if not moderated_folder_decision.quarantine
+                    else "quarantine_folder"
                 ),
                 model=settings.model,
             )
         if batch_id is not None:
-            action = "quarantine_folder" if decision.quarantine else "move_folder"
+            action = (
+                "quarantine_folder"
+                if moderated_folder_decision.quarantine
+                else "move_folder"
+            )
             if result.duplicate:
                 action = "duplicate_folder"
             tools.ctx.store.add_move_history(
@@ -497,7 +565,7 @@ def _recurse_directory(
                 dst_path=(
                     result.destination.path if result.destination is not None else None
                 ),
-                reason=decision.reasoning,
+                reason=moderated_folder_decision.reasoning,
                 model=settings.model,
             )
 
@@ -569,11 +637,14 @@ def _apply_decision(
     """
     if decision.quarantine:
         return tools.quarantine_file(ref, mime=mime, extracted_chars=extracted_chars)
-    normalized = enforce_johnny_decimal_folder(
-        files=tools.ctx.files,
-        root=tools.ctx.organized_root,
-        folder=decision.folder,
-    )
+    try:
+        normalized = enforce_johnny_decimal_folder(
+            files=tools.ctx.files,
+            root=tools.ctx.organized_root,
+            folder=decision.folder,
+        )
+    except JohnnyDecimalLimitError:
+        return tools.quarantine_file(ref, mime=mime, extracted_chars=extracted_chars)
     return tools.move_file(
         ref,
         normalized,
@@ -592,12 +663,205 @@ def _apply_folder_decision(
     """Apply folder decision by moving folder or quarantining it."""
     if decision.quarantine:
         return tools.quarantine_file(ref, mime="inode/directory", extracted_chars=0)
-    normalized = enforce_johnny_decimal_folder(
+    try:
+        normalized = enforce_johnny_decimal_folder(
+            files=tools.ctx.files,
+            root=tools.ctx.organized_root,
+            folder=decision.folder,
+        )
+    except JohnnyDecimalLimitError:
+        return tools.quarantine_file(ref, mime="inode/directory", extracted_chars=0)
+    return tools.move_ref(ref, normalized, mime="inode/directory", extracted_chars=0)
+
+
+@dataclass(frozen=True)
+class _ModerationOutcome:
+    quarantine: bool
+    folder: str
+    reasoning: str
+
+
+def _moderate_file_decision(
+    *,
+    decision: AgentDecision,
+    area_agent: AreaAgentProtocol,
+    tools: OrganizerTools,
+    snapshot: list[str],
+    source_relative_dir: str,
+    user_context: str,
+    filename: str,
+    extracted_text: str,
+) -> AgentDecision:
+    """Moderate new area/category creation for file routing decisions."""
+    if decision.quarantine:
+        return decision
+    outcome = _moderate_destination_if_needed(
+        proposed_folder=decision.folder,
+        area_agent=area_agent,
+        tools=tools,
+        snapshot=snapshot,
+        source_relative_dir=source_relative_dir,
+        user_context=user_context,
+        filename=filename,
+        extracted_text=extracted_text,
+        decision_kind="file",
+    )
+    if not outcome.quarantine and outcome.folder == decision.folder:
+        return decision
+    if outcome.quarantine:
+        return AgentDecision(
+            folder=decision.folder,
+            reasoning=f"{decision.reasoning}; moderation: {outcome.reasoning}",
+            confidence=decision.confidence,
+            quarantine=True,
+            filename=decision.filename,
+        )
+    return AgentDecision(
+        folder=outcome.folder,
+        reasoning=f"{decision.reasoning}; moderation: {outcome.reasoning}",
+        confidence=decision.confidence,
+        quarantine=False,
+        filename=decision.filename,
+    )
+
+
+def _moderate_folder_decision(
+    *,
+    decision: FolderDecision,
+    area_agent: AreaAgentProtocol,
+    tools: OrganizerTools,
+    snapshot: list[str],
+    source_relative_dir: str,
+    user_context: str,
+    folder_name: str,
+) -> FolderDecision:
+    """Moderate new area/category creation for folder routing decisions."""
+    if decision.quarantine or decision.action == "recurse":
+        return decision
+    outcome = _moderate_destination_if_needed(
+        proposed_folder=decision.folder,
+        area_agent=area_agent,
+        tools=tools,
+        snapshot=snapshot,
+        source_relative_dir=source_relative_dir,
+        user_context=user_context,
+        filename=folder_name,
+        extracted_text="",
+        decision_kind="folder",
+    )
+    if not outcome.quarantine and outcome.folder == decision.folder:
+        return decision
+    if outcome.quarantine:
+        return FolderDecision(
+            action=decision.action,
+            folder=decision.folder,
+            reasoning=f"{decision.reasoning}; moderation: {outcome.reasoning}",
+            confidence=decision.confidence,
+            quarantine=True,
+        )
+    return FolderDecision(
+        action=decision.action,
+        folder=outcome.folder,
+        reasoning=f"{decision.reasoning}; moderation: {outcome.reasoning}",
+        confidence=decision.confidence,
+        quarantine=False,
+    )
+
+
+def _moderate_destination_if_needed(
+    *,
+    proposed_folder: str,
+    area_agent: AreaAgentProtocol,
+    tools: OrganizerTools,
+    snapshot: list[str],
+    source_relative_dir: str,
+    user_context: str,
+    filename: str,
+    extracted_text: str,
+    decision_kind: str,
+) -> _ModerationOutcome:
+    """Moderate destination when it creates a new area/category."""
+    analysis = analyze_johnny_decimal_creation(
         files=tools.ctx.files,
         root=tools.ctx.organized_root,
-        folder=decision.folder,
+        folder=proposed_folder,
     )
-    return tools.move_ref(ref, normalized, mime="inode/directory", extracted_chars=0)
+    if not analysis.requires_moderation:
+        return _ModerationOutcome(
+            quarantine=False,
+            folder=proposed_folder,
+            reasoning="no area/category creation",
+        )
+    decision = _call_area_moderation(
+        area_agent=area_agent,
+        proposed_folder=proposed_folder,
+        analysis=analysis,
+        snapshot=snapshot,
+        source_relative_dir=source_relative_dir,
+        user_context=user_context,
+        filename=filename,
+        extracted_text=extracted_text,
+        decision_kind=decision_kind,
+    )
+    if decision.quarantine:
+        return _ModerationOutcome(
+            quarantine=True,
+            folder=proposed_folder,
+            reasoning=decision.reasoning,
+        )
+    if decision.approved:
+        folder = decision.folder or proposed_folder
+        return _ModerationOutcome(
+            quarantine=False,
+            folder=folder,
+            reasoning=decision.reasoning,
+        )
+    if decision.folder:
+        return _ModerationOutcome(
+            quarantine=False,
+            folder=decision.folder,
+            reasoning=decision.reasoning,
+        )
+    return _ModerationOutcome(
+        quarantine=True,
+        folder=proposed_folder,
+        reasoning=decision.reasoning or "creation rejected without replacement",
+    )
+
+
+def _call_area_moderation(
+    *,
+    area_agent: AreaAgentProtocol,
+    proposed_folder: str,
+    analysis: JohnnyDecimalCreationAnalysis,
+    snapshot: list[str],
+    source_relative_dir: str,
+    user_context: str,
+    filename: str,
+    extracted_text: str,
+    decision_kind: str,
+) -> AreaCreationDecision:
+    """Call area moderation agent and handle parse failures safely."""
+    try:
+        return moderate_area_creation(
+            area_agent,
+            proposed_folder=proposed_folder,
+            creation=analysis,
+            tree_snapshot=snapshot,
+            user_context=user_context,
+            source_relative_dir=source_relative_dir,
+            filename=filename,
+            extracted_text=extracted_text,
+            decision_kind=decision_kind,
+        )
+    except Exception:  # noqa: BLE001
+        return AreaCreationDecision(
+            approved=False,
+            reasoning="moderation agent error",
+            folder=None,
+            confidence=0.0,
+            quarantine=True,
+        )
 
 
 if __name__ == "__main__":

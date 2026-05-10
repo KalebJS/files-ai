@@ -133,6 +133,8 @@ def test_decide_folder_prompt_discourages_unsorted() -> None:
     assert "## Existing tree" in content
     assert '"Finance"' in content
     assert '"Invoices"' in content
+    assert "Top-level areas are capped at 10 total" in content
+    assert "Never use duplicate/overflow `90-99` areas" in content
     assert "## User context" in content
     assert "```markdown" in content
     assert "You manage files for Acme Finance." in content
@@ -260,4 +262,13 @@ def test_build_agent_configures_langsmith(monkeypatch: pytest.MonkeyPatch) -> No
     assert os.environ["LANGSMITH_PROJECT"] == "files-ai-tests"
     assert os.environ["LANGSMITH_ENDPOINT"] == "https://api.smith.langchain.com"
     assert isinstance(captured["llm_kwargs"], dict)
+    assert captured["llm_kwargs"]["reasoning"] == "medium"
     assert isinstance(captured["agent_kwargs"], dict)
+
+
+def test_system_prompt_mentions_area_creation_limits() -> None:
+    """Require model prompt guidance against duplicate overflow areas."""
+    from files_ai.agent import SYSTEM_PROMPT
+
+    assert "Top-level areas are capped at 10 total" in SYSTEM_PROMPT
+    assert "Never create duplicate/overflow 90-99 areas" in SYSTEM_PROMPT

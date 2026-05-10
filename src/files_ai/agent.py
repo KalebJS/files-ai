@@ -31,9 +31,13 @@ Hard rules:
 1) Keep folder depth <= 4 and use safe names.
 1.1) Folder must follow Johnny.Decimal shape: Area/Category/ID.
      Example: 10-19 Life Admin/13 Money/13.02 W-2s
+1.2) Top-level areas are capped at 10 total: 00-09 through 90-99.
+1.3) Never create duplicate/overflow 90-99 areas.
 2) Prefer a specific semantic destination, not generic catch-all bins.
 3) Use an existing folder from tree only when it is clearly the best fit.
 4) If no existing folder fits, create a concise new folder path based on content.
+4.1) New areas must be broad and durable, not one-off topics.
+4.2) If an existing area fits, place a new category/ID there instead of new area.
 5) "Unsorted" is a last-resort failure bucket and should almost never be chosen.
 6) Only set quarantine=true for unsafe, suspicious, or policy-sensitive content.
 7) Filename rename is optional but should be used when it clearly improves
@@ -159,6 +163,7 @@ def build_agent(settings: Settings) -> AgentProtocol:
     _configure_langsmith(settings)
     llm = ChatOllama(
         model=settings.model,
+        reasoning=settings.model_reasoning,
         base_url=settings.ollama_base_url,
         client_kwargs={
             "headers": {
@@ -253,8 +258,11 @@ def _build_prompt(
         "Choose a Johnny.Decimal destination folder for this file.\n\n"
         "## Decision policy\n"
         "- Output Johnny.Decimal `Area/Category/ID` destination.\n"
+        "- Top-level areas are capped at 10 total (00-09 .. 90-99).\n"
+        "- Never use duplicate/overflow `90-99` areas.\n"
         "- Favor specific semantic categories.\n"
         "- Reuse an existing folder only when strongly correct.\n"
+        "- Keep broad domains in existing areas whenever possible.\n"
         "- If none fit, create a concise new folder path.\n"
         "- Avoid `Unsorted` except as a true last resort.\n\n"
         "## Filename policy\n"

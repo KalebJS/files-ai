@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     ollama_api_key: SecretStr = SecretStr("")
     ollama_base_url: str = "https://ollama.com"
     model: str = "gpt-oss:120b-cloud"
+    model_reasoning: bool | str | None = "medium"
+    area_creation_model: str = "kimi-k2.6:cloud"
     watch_quiet_seconds: float = 5.0
     context_max_bytes: int = 16384
     langsmith_tracing: bool = False
