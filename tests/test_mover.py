@@ -155,6 +155,51 @@ def test_move_directory_hash_distinguishes_tree_layout(tmp_path: Path) -> None:
         db.close()
 
 
+def test_move_into_folder_reuses_stale_hash_record(tmp_path: Path) -> None:
+    """Treat stale hash rows as normal moves when destination is missing."""
+    files = LocalFiles(tmp_path)
+    drop = FileRef("local", "/dropzone")
+    org = FileRef("local", "/organized/Receipts")
+    dup = FileRef("local", "/quarantine/duplicates")
+    files.make_dir(drop)
+    files.make_dir(org)
+    files.make_dir(dup)
+    db = Store(tmp_path / "state.db")
+    try:
+        ref = files.join(drop, "receipt.txt")
+        (tmp_path / "dropzone" / "receipt.txt").write_text("same", encoding="utf-8")
+        stale_id = db.insert_file(
+            sha256=files.hash(ref),
+            backend="local",
+            src_path="/organized/Receipts/receipt-old.txt",
+            size=4,
+            mime="text/plain",
+            extracted_chars=4,
+        )
+        db.set_destination(stale_id, "/organized/Receipts/receipt-old.txt")
+        moved = move_into_folder(
+            files=files,
+            store=db,
+            src=ref,
+            folder=org,
+            duplicate_folder=dup,
+            mime="text/plain",
+            extracted_chars=4,
+        )
+        assert moved.file_id == stale_id
+        assert not moved.duplicate
+        assert moved.destination is not None
+        assert moved.destination.path == "/organized/Receipts/receipt.txt"
+        assert files.exists(moved.destination)
+        assert not files.exists(ref)
+        updated = db.get_file_by_id(stale_id)
+        assert updated is not None
+        assert updated.dst_path == "/organized/Receipts/receipt.txt"
+        assert not any((tmp_path / "quarantine" / "duplicates").iterdir())
+    finally:
+        db.close()
+
+
 def test_move_into_folder_uses_filename_override(tmp_path: Path) -> None:
     """Move a file using provided filename override."""
     files = LocalFiles(tmp_path)

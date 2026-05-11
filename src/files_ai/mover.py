@@ -61,7 +61,30 @@ def move_into_folder(
     target_filename = selected_filename or src_filename
     src_meta = files.stat(src)
     sha256 = _source_hash(files=files, src=src, is_dir=src_meta.is_dir)
-    if store.has_hash(sha256):
+    existing = store.get_file_by_hash(sha256)
+    if existing is not None:
+        existing_destination_exists = False
+        if existing.dst_path:
+            try:
+                existing_destination_exists = files.exists(
+                    FileRef(backend=existing.backend, path=existing.dst_path)
+                )
+            except Exception:
+                existing_destination_exists = False
+        if not existing_destination_exists:
+            files.make_dir(folder, parents=True, exist_ok=True)
+            destination = _next_available_destination(
+                files=files, folder=folder, name=target_filename
+            )
+            if not dry_run:
+                files.move(src, destination)
+                store.update_file_destination(existing.id, destination.path)
+            return MoveResult(
+                file_id=existing.id,
+                destination=destination,
+                dry_run=dry_run,
+                duplicate=False,
+            )
         if duplicate_folder is None:
             return MoveResult(
                 file_id=None, destination=None, dry_run=dry_run, duplicate=True

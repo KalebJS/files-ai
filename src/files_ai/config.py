@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     ollama_api_key: SecretStr = SecretStr("")
     ollama_base_url: str = "https://ollama.com"
-    model: str = "gpt-oss:120b-cloud"
+    model: str = "gemma4:31b-cloud"
     model_reasoning: bool | str | None = "medium"
     area_creation_model: str = "kimi-k2.6:cloud"
     watch_quiet_seconds: float = 5.0
@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     dry_run: bool = False
     max_depth: int = 4
     extract_max_bytes: int = 8192
-    ocr_enabled: bool = False
+    vision_enabled: bool = True
+    vision_model: str = "gemma4:31b-cloud"
     log_level: str = "INFO"
     poll_interval_seconds: float = 1.0
 

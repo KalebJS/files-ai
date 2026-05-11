@@ -259,29 +259,41 @@ def _process_file(
         tools.ctx.files,
         ref,
         max_bytes=settings.extract_max_bytes,
-        ocr_enabled=settings.ocr_enabled,
+        vision_enabled=settings.vision_enabled,
+        vision_model=settings.vision_model,
+        vision_base_url=settings.ollama_base_url,
+        vision_api_key=settings.ollama_api_key.get_secret_value(),
     )
-    snapshot = build_tree_snapshot(
-        tools.ctx.files, tools.ctx.organized_root, max_depth=settings.max_depth
-    )
-    decision = decide_folder(
-        agent,
-        filename=tools.ctx.files.name_of(ref),
-        extracted_text=extraction.text,
-        tree_snapshot=snapshot,
-        source_relative_dir=str(ref.extra.get("dropzone_relative_dir", "")),
-        user_context=user_context,
-    )
-    moderated_file_decision = _moderate_file_decision(
-        decision=decision,
-        area_agent=area_agent,
-        tools=tools,
-        snapshot=snapshot,
-        source_relative_dir=str(ref.extra.get("dropzone_relative_dir", "")),
-        user_context=user_context,
-        filename=tools.ctx.files.name_of(ref),
-        extracted_text=extraction.text,
-    )
+    if extraction.encrypted:
+        moderated_file_decision = AgentDecision(
+            folder="Unsorted",
+            reasoning="auto-quarantined encrypted pdf",
+            confidence=1.0,
+            quarantine=True,
+            filename=None,
+        )
+    else:
+        snapshot = build_tree_snapshot(
+            tools.ctx.files, tools.ctx.organized_root, max_depth=settings.max_depth
+        )
+        decision = decide_folder(
+            agent,
+            filename=tools.ctx.files.name_of(ref),
+            extracted_text=extraction.text,
+            tree_snapshot=snapshot,
+            source_relative_dir=str(ref.extra.get("dropzone_relative_dir", "")),
+            user_context=user_context,
+        )
+        moderated_file_decision = _moderate_file_decision(
+            decision=decision,
+            area_agent=area_agent,
+            tools=tools,
+            snapshot=snapshot,
+            source_relative_dir=str(ref.extra.get("dropzone_relative_dir", "")),
+            user_context=user_context,
+            filename=tools.ctx.files.name_of(ref),
+            extracted_text=extraction.text,
+        )
     result = _apply_decision(
         ref=ref,
         decision=moderated_file_decision,

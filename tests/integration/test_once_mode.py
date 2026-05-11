@@ -8,6 +8,7 @@ from pathlib import Path
 from files_ai import __main__ as app
 from files_ai.agent import AgentDecision
 from files_ai.config import get_settings
+from files_ai.extract import ExtractionResult
 from files_ai.folder_agent import FolderDecision
 from files_ai.storage import FileRef
 from files_ai.storage import LocalFiles
@@ -259,7 +260,7 @@ def test_once_mode_moves_duplicates_to_quarantine(monkeypatch, tmp_path: Path) -
     files = LocalFiles(tmp_path)
     store = Store(state_db)
     existing_ref = FileRef("local", "/organized/Finance/Invoices/invoice.txt")
-    store.insert_file(
+    file_id = store.insert_file(
         sha256=files.hash(existing_ref),
         backend="local",
         src_path="/organized/Finance/Invoices/invoice.txt",
@@ -267,6 +268,7 @@ def test_once_mode_moves_duplicates_to_quarantine(monkeypatch, tmp_path: Path) -
         mime="text/plain",
         extracted_chars=12,
     )
+    store.set_destination(file_id, "/organized/Finance/Invoices/invoice.txt")
     store.close()
 
     monkeypatch.setenv("BACKEND", "local")
@@ -314,6 +316,163 @@ def test_once_mode_moves_duplicates_to_quarantine(monkeypatch, tmp_path: Path) -
     assert duplicate_target.exists()
     assert not source.exists()
     assert not any((tmp_path / "dropzone").iterdir())
+
+
+def test_once_mode_reimports_when_duplicate_destination_missing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Route as normal when hash exists but cached destination is missing."""
+    dropzone = tmp_path / "dropzone" / "nested"
+    organized = tmp_path / "organized"
+    quarantine = tmp_path / "quarantine"
+    dropzone.mkdir(parents=True)
+    organized.mkdir(parents=True)
+    quarantine.mkdir(parents=True)
+    source = dropzone / "invoice-dup.txt"
+    source.write_text("same-content", encoding="utf-8")
+    state_db = tmp_path / "state.db"
+
+    files = LocalFiles(tmp_path)
+    store = Store(state_db)
+    stale_id = store.insert_file(
+        sha256=files.hash(FileRef("local", "/dropzone/nested/invoice-dup.txt")),
+        backend="local",
+        src_path="/organized/Finance/Invoices/invoice.txt",
+        size=len("same-content"),
+        mime="text/plain",
+        extracted_chars=12,
+    )
+    store.set_destination(stale_id, "/organized/Finance/Invoices/invoice.txt")
+    store.close()
+
+    monkeypatch.setenv("BACKEND", "local")
+    monkeypatch.setenv("BACKEND_OPTS__ROOT", str(tmp_path))
+    monkeypatch.setenv("DROPZONE", "/dropzone")
+    monkeypatch.setenv("ORGANIZED", "/organized")
+    monkeypatch.setenv("QUARANTINE", "/quarantine")
+    monkeypatch.setenv("STATE_DB", str(state_db))
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("MODEL", "test-model")
+    monkeypatch.setattr("sys.argv", ["files-ai", "--once"])
+    monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
+    monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
+    monkeypatch.setattr(
+        app, "build_area_creation_agent_from_settings", lambda _: _DummyAreaAgent()
+    )
+    monkeypatch.setattr(
+        app,
+        "decide_folder",
+        lambda *_args, **_kwargs: AgentDecision(
+            folder="Finance/Invoices",
+            reasoning="stale duplicate cache",
+            confidence=1.0,
+        ),
+    )
+    monkeypatch.setattr(
+        app,
+        "decide_folder_action",
+        lambda *_args, **_kwargs: FolderDecision(
+            action="recurse",
+            folder="Unsorted",
+            reasoning="stale duplicate recurse",
+            confidence=1.0,
+        ),
+    )
+    monkeypatch.setattr(app.StableFileWatcher, "is_stable", lambda *_: True)
+
+    get_settings.cache_clear()
+    try:
+        app.main()
+    finally:
+        get_settings.cache_clear()
+
+    moved_target = (
+        organized
+        / "10-19 Finance"
+        / "10 Invoices"
+        / "10.01 Invoices"
+        / "invoice-dup.txt"
+    )
+    assert moved_target.exists()
+    assert not source.exists()
+    duplicate_target = quarantine / "duplicates" / "nested" / "invoice-dup.txt"
+    assert not duplicate_target.exists()
+    with sqlite3.connect(state_db) as conn:
+        updated_dst = conn.execute(
+            "SELECT dst_path FROM files WHERE id = ?", (stale_id,)
+        ).fetchone()
+    assert updated_dst is not None
+    assert updated_dst[0] is not None
+    assert updated_dst[0].endswith(
+        "/10-19 Finance/10 Invoices/10.01 Invoices/invoice-dup.txt"
+    )
+
+
+def test_once_mode_auto_quarantines_encrypted_pdf(monkeypatch, tmp_path: Path) -> None:
+    """Auto-quarantine encrypted PDFs without routing via file agent."""
+    dropzone = tmp_path / "dropzone"
+    organized = tmp_path / "organized"
+    quarantine = tmp_path / "quarantine"
+    dropzone.mkdir(parents=True)
+    organized.mkdir(parents=True)
+    quarantine.mkdir(parents=True)
+    source = dropzone / "secret.pdf"
+    source.write_text("placeholder", encoding="utf-8")
+    state_db = tmp_path / "state.db"
+
+    monkeypatch.setenv("BACKEND", "local")
+    monkeypatch.setenv("BACKEND_OPTS__ROOT", str(tmp_path))
+    monkeypatch.setenv("DROPZONE", "/dropzone")
+    monkeypatch.setenv("ORGANIZED", "/organized")
+    monkeypatch.setenv("QUARANTINE", "/quarantine")
+    monkeypatch.setenv("STATE_DB", str(state_db))
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("MODEL", "test-model")
+    monkeypatch.setattr("sys.argv", ["files-ai", "--once"])
+    monkeypatch.setattr(app, "build_agent", lambda _: _DummyAgent())
+    monkeypatch.setattr(app, "build_folder_agent", lambda _: _DummyFolderAgent())
+    monkeypatch.setattr(
+        app, "build_area_creation_agent_from_settings", lambda _: _DummyAreaAgent()
+    )
+    monkeypatch.setattr(
+        app,
+        "extract_file",
+        lambda *_args, **_kwargs: ExtractionResult(
+            text="secret.pdf",
+            mime="application/pdf",
+            tier=1,
+            encrypted=True,
+        ),
+    )
+    monkeypatch.setattr(
+        app,
+        "decide_folder",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("decide_folder should not run for encrypted PDFs")
+        ),
+    )
+    monkeypatch.setattr(
+        app,
+        "decide_folder_action",
+        lambda *_args, **_kwargs: FolderDecision(
+            action="recurse",
+            folder="Unsorted",
+            reasoning="encrypted recurse",
+            confidence=1.0,
+        ),
+    )
+    monkeypatch.setattr(app.StableFileWatcher, "is_stable", lambda *_: True)
+
+    get_settings.cache_clear()
+    try:
+        app.main()
+    finally:
+        get_settings.cache_clear()
+
+    target = quarantine / "secret.pdf"
+    assert target.exists()
+    assert not source.exists()
+    assert not any(organized.iterdir())
 
 
 def test_once_mode_renames_file_when_agent_suggests(

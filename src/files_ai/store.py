@@ -135,6 +135,41 @@ class Store:
             ).fetchone()
         return row is not None
 
+    def get_file_by_hash(self, sha256: str) -> FileRow | None:
+        """Fetch most recent file row by content hash.
+
+        Args:
+            sha256: File hash to look up.
+
+        Returns:
+            FileRow | None: Stored file row when found.
+        """
+        with self._lock:
+            row = self.conn.execute(
+                """
+                SELECT id, sha256, backend, src_path, dst_path, size, mime,
+                       extracted_chars, moved_at
+                FROM files
+                WHERE sha256 = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (sha256,),
+            ).fetchone()
+        if row is None:
+            return None
+        return FileRow(
+            id=int(row[0]),
+            sha256=str(row[1]),
+            backend=str(row[2]),
+            src_path=str(row[3]),
+            dst_path=str(row[4]) if row[4] is not None else None,
+            size=int(row[5]),
+            mime=str(row[6]) if row[6] is not None else None,
+            extracted_chars=int(row[7]),
+            moved_at=str(row[8]) if row[8] is not None else None,
+        )
+
     def insert_file(
         self,
         *,

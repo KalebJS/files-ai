@@ -1,7 +1,5 @@
 FROM python:3.13-slim
 
-ARG INSTALL_OCR=false
-
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
@@ -9,7 +7,6 @@ WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libmagic1 \
-    && if [ "$INSTALL_OCR" = "true" ]; then apt-get install -y --no-install-recommends tesseract-ocr; fi \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md /app/
